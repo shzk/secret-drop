@@ -91,6 +91,48 @@ def write_env_batch(root: Path, values: dict[str, str]) -> None:
             os.unlink(path)
 
 
+
+def verify_env_written(root: Path, values: dict[str, str]) -> dict[str, bool]:
+    """Post-write on-disk readback, LOCAL ONLY. Never return or log secret bytes.
+
+    The agent receives only per-variable booleans. Verification compares the
+    exact serialized values held by this process with saved file contents,
+    checks owner/mode 0600, and rejects symlinks/hardlinks or unbounded files.
+    This establishes persistence, NOT external API credential validity.
+    """
+    verified = {name: False for name in values}
+    if not values:
+        return verified
+    fd = None
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        fd = os.open(root / ".env", flags)
+        info = os.fstat(fd)
+        if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                or info.st_uid != os.getuid()
+                or stat.S_IMODE(info.st_mode) != 0o600 or info.st_size > 1048576):
+            return verified
+        with os.fdopen(fd, "r", encoding="utf-8") as stream:
+            fd = None
+            content = stream.read(1048577)
+        if len(content) > 1048576:
+            return verified
+        lines = content.splitlines()
+        for name, value in values.items():
+            matcher = re.compile(r"^\s*(?:export\s+)?" + re.escape(name) + r"\s*=")
+            matches = [line for line in lines if matcher.match(line)]
+            verified[name] = (
+                len(matches) == 1
+                and matches[0].split("=", 1)[1] == quote_env(value)
+            )
+        return verified
+    except (OSError, UnicodeError, ValueError):
+        return verified
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
 def write_env(root: Path, name: str, value: str) -> None:
     """Compatibility wrapper for the single-secret API."""
     write_env_batch(root, {name: value})
