@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
-"""Interactive local secret entry. Intended for direct HUMAN terminal use only."""
-import argparse
-import getpass
+"""Internal secure local .env/GitHub writer. Imported by the macOS GUI MCP tool."""
 import os
 from pathlib import Path
 import re
 import stat
 import subprocess
-import sys
 import tempfile
 
 NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
@@ -104,45 +101,3 @@ def write_github(name: str, repo: str, value: str) -> bool:
     except (OSError, subprocess.TimeoutExpired):
         return False
 
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Local masked secret entry; no AI chat input")
-    sub = parser.add_subparsers(dest="action", required=True)
-    setter = sub.add_parser("set")
-    setter.add_argument("name")
-    setter.add_argument("--github", metavar="OWNER/REPO")
-    setter.add_argument("--no-env", action="store_true")
-    args = parser.parse_args()
-    if not NAME.fullmatch(args.name) or args.name.upper().startswith("GITHUB_"):
-        print("Invalid or reserved secret name", file=sys.stderr)
-        return 2
-    if args.github and not REPO.fullmatch(args.github):
-        print("Invalid repository name", file=sys.stderr)
-        return 2
-    if args.no_env and not args.github:
-        print("--no-env requires --github", file=sys.stderr)
-        return 2
-    if not sys.stdin.isatty() or not sys.stderr.isatty():
-        print("Interactive human terminal required; never pass secrets via a model/tool", file=sys.stderr)
-        return 2
-    value = getpass.getpass("Enter " + args.name + " (hidden): ")
-    if not value:
-        print("Empty secret not stored", file=sys.stderr)
-        return 2
-    if not args.no_env:
-        try:
-            write_env(Path.cwd().resolve(), args.name, value)
-        except (ValueError, OSError, UnicodeError) as exc:
-            print("Local save refused: " + str(exc), file=sys.stderr)
-            return 1
-        print("Saved " + args.name + " to local .env with mode 0600")
-    if args.github:
-        if not write_github(args.name, args.github, value):
-            print("GitHub secret write failed; local save, if any, is unaffected", file=sys.stderr)
-            return 1
-        print("Saved " + args.name + " to GitHub Actions Secrets in " + args.github)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
