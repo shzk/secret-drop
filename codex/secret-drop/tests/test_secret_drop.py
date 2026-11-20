@@ -320,5 +320,58 @@ class NativeMcpTests(unittest.TestCase):
             self.assertNotIn("DummyOnly321", json.dumps(output))
 
 
+    def test_local_saved_values_are_verified_by_helper_without_model_readback(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            values = {"TEST_ALPHA": "OnlySynthetic432", "TEST_BETA": "Fake-$-value"}
+            helper.write_env_batch(root, values)
+            status = helper.verify_env_written(root, values)
+            self.assertEqual(status, {"TEST_ALPHA": True, "TEST_BETA": True})
+            (root / ".env").write_text("TEST_ALPHA=changed\nTEST_BETA='Fake-$-value'\n")
+            self.assertEqual(
+                helper.verify_env_written(root, values),
+                {"TEST_ALPHA": False, "TEST_BETA": False},
+            )
+
+    def test_local_verification_rejects_insecure_permissions(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            values = {"TEST_ALPHA": "DummyOnly987"}
+            helper.write_env_batch(root, values)
+            (root / ".env").chmod(0o644)
+            self.assertEqual(helper.verify_env_written(root, values), {"TEST_ALPHA": False})
+
+    def test_mcp_reports_local_verify_failure_without_secret_values(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            with self._fake_home(root), \
+                 mock.patch.object(server, "native_dialog",
+                                   return_value={"TEST_ALPHA": "FixtureOnly123"}), \
+                 mock.patch.object(server, "verify_env_written",
+                                   return_value={"TEST_ALPHA": False}):
+                response = server.request_secret({"name": "TEST_ALPHA", "project_dir": str(root)})
+            self.assertTrue(response["isError"])
+            self.assertIn("not verified", json.dumps(response).lower())
+            self.assertNotIn("FixtureOnly123", json.dumps(response))
+
+    def test_partial_save_verification_distinguishes_skipped_and_confirmed(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            with self._fake_home(root), mock.patch.object(
+                server, "native_dialog", return_value={"TEST_ALPHA": "FakeOnly321"}
+            ):
+                response = server.request_secret({
+                    "secrets": [{"name": "TEST_ALPHA"}, {"name": "TEST_BETA"}],
+                    "project_dir": str(root),
+                })
+            self.assertFalse(response["isError"], response)
+            report = json.dumps(response)
+            self.assertIn("verified", report.lower())
+            self.assertIn("TEST_ALPHA", report)
+            self.assertIn("TEST_BETA", report)
+            self.assertIn("Skipped", report)
+            self.assertNotIn("FakeOnly321", report)
+
+
 if __name__ == "__main__":
     unittest.main()
