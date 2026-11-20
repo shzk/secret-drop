@@ -226,5 +226,99 @@ class NativeMcpTests(unittest.TestCase):
                 self.assertNotIn(value, json.dumps(result))
 
 
+    def test_partial_save_reports_each_unfilled_name(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            fields = [{"name": "TEST_ONE"}, {"name": "TEST_TWO"}, {"name": "TEST_THREE"}]
+            fake = "Dummy-Only-111"
+            with self._fake_home(root), mock.patch.object(
+                server, "native_dialog", return_value={"TEST_TWO": fake}
+            ):
+                output = server.request_secret({"secrets": fields, "project_dir": str(root)})
+            self.assertFalse(output["isError"], output)
+            self.assertEqual((root / ".env").read_text(), "TEST_TWO=Dummy-Only-111\n")
+            self.assertEqual(stat.S_IMODE((root / ".env").stat().st_mode), 0o600)
+            report = json.dumps(output)
+            self.assertIn("TEST_TWO", report)
+            self.assertIn("TEST_ONE", report)
+            self.assertIn("TEST_THREE", report)
+            self.assertIn("Skipped", report)
+            self.assertNotIn(fake, report)
+
+    def test_partial_save_preserves_previous_env_and_skipped_names(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            (root / ".env").write_text("TEST_TWO=previous-fixture\nKEEP=untouched\n")
+            with self._fake_home(root), mock.patch.object(
+                server, "native_dialog", return_value={"TEST_ONE": "New-Fake-123"}
+            ):
+                output = server.request_secret({
+                    "secrets": [{"name": "TEST_ONE"}, {"name": "TEST_TWO"}],
+                    "project_dir": str(root),
+                })
+            self.assertFalse(output["isError"])
+            self.assertEqual(
+                (root / ".env").read_text(),
+                "TEST_TWO=previous-fixture\nKEEP=untouched\nTEST_ONE=New-Fake-123\n",
+            )
+            self.assertIn("TEST_TWO", json.dumps(output))
+            self.assertIn("Skipped", json.dumps(output))
+
+    def test_all_fields_left_blank_reports_no_save(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            with self._fake_home(root), mock.patch.object(
+                server, "native_dialog", return_value={}
+            ):
+                output = server.request_secret({
+                    "secrets": [{"name": "TEST_ONE"}, {"name": "TEST_TWO"}],
+                    "project_dir": str(root),
+                })
+            self.assertTrue(output["isError"])
+            self.assertFalse((root / ".env").exists())
+            self.assertIn("No values", json.dumps(output))
+            self.assertIn("TEST_ONE", json.dumps(output))
+            self.assertIn("TEST_TWO", json.dumps(output))
+
+    def test_native_dialog_accepts_partial_subset_of_requested_fields(self):
+        response = {"status": "entered", "values": {"TEST_TWO": "Only-Dummy-987"}}
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout=json.dumps(response), stderr="")
+        fields = [{"name": "TEST_ONE"}, {"name": "TEST_TWO"}]
+        with mock.patch.object(server.platform, "system", return_value="Darwin"), \
+             mock.patch.object(server, "dialog_binary", return_value=Path("/fake/native-dialog")), \
+             mock.patch.object(server.subprocess, "run", return_value=proc):
+            values = server.native_dialog(fields, "/tmp/test/.env")
+        self.assertEqual(values, {"TEST_TWO": "Only-Dummy-987"})
+
+    def test_native_dialog_rejects_unrequested_variable(self):
+        response = {"status": "entered", "values": {"EVIL": "Only-Dummy-987"}}
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout=json.dumps(response), stderr="")
+        fields = [{"name": "TEST_ONE"}, {"name": "TEST_TWO"}]
+        with mock.patch.object(server.platform, "system", return_value="Darwin"), \
+             mock.patch.object(server, "dialog_binary", return_value=Path("/fake/native-dialog")), \
+             mock.patch.object(server.subprocess, "run", return_value=proc):
+            with self.assertRaises(server.Cancelled):
+                server.native_dialog(fields, "/tmp/test/.env")
+
+    def test_github_partial_save_skips_empty_fields_without_external_write(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            with self._fake_home(root), \
+                 mock.patch.object(server, "native_dialog", return_value={"TEST_ONE": "DummyOnly321"}), \
+                 mock.patch.object(server, "write_github", return_value=True) as gh:
+                output = server.request_secret({
+                    "secrets": [{"name": "TEST_ONE"}, {"name": "TEST_TWO"}],
+                    "project_dir": str(root),
+                    "destination": "github", "github_repo": "example/demo",
+                })
+            self.assertFalse(output["isError"])
+            self.assertEqual(gh.call_count, 1)
+            self.assertEqual(gh.call_args.args[:2], ("TEST_ONE", "example/demo"))
+            self.assertIn("TEST_TWO", json.dumps(output))
+            self.assertIn("Skipped", json.dumps(output))
+            self.assertFalse((root / ".env").exists())
+            self.assertNotIn("DummyOnly321", json.dumps(output))
+
+
 if __name__ == "__main__":
     unittest.main()
