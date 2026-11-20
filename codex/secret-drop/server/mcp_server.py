@@ -91,8 +91,8 @@ def native_dialog(name: str, target: str) -> str:
 
 
 def validate(args: object) -> tuple[str, Path, str, str | None, str]:
-    if not isinstance(args, dict):
-        raise ValueError("invalid parameters")
+    if not isinstance(args, dict) or set(args) - {"name", "project_dir", "destination", "github_repo"}:
+        raise ValueError("invalid parameters; do not include secret values")
     name = args.get("name")
     destination = args.get("destination", "env")
     repo = args.get("github_repo")
