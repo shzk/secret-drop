@@ -199,7 +199,7 @@ class NativeMcpTests(unittest.TestCase):
         lines = [json.loads(line) for line in reply.stdout.splitlines()]
         self.assertEqual(len(lines), 2, reply)
         self.assertEqual(lines[0]["result"]["serverInfo"]["name"], "secret-drop-local")
-        self.assertEqual(lines[0]["result"]["serverInfo"]["version"], "0.4.0")
+        self.assertEqual(lines[0]["result"]["serverInfo"]["version"], "0.5.0")
         schema = lines[1]["result"]["tools"][0]["inputSchema"]
         self.assertIn("secrets", schema["properties"])
         self.assertEqual(schema["properties"]["secrets"]["maxItems"], 12)
