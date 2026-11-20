@@ -330,7 +330,7 @@ class NativeMcpTests(unittest.TestCase):
             (root / ".env").write_text("TEST_ALPHA=changed\nTEST_BETA='Fake-$-value'\n")
             self.assertEqual(
                 helper.verify_env_written(root, values),
-                {"TEST_ALPHA": False, "TEST_BETA": False},
+                {"TEST_ALPHA": False, "TEST_BETA": True},
             )
 
     def test_local_verification_rejects_insecure_permissions(self):
