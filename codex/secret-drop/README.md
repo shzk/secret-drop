@@ -1,21 +1,20 @@
-# Secret Drop for Codex — native masked macOS dialog
+# Secret Drop for Codex — защищённый ввод секретов на macOS
 
-**Version 0.4.0 (Desktop user acceptance pending).** Upstream: [aislam23/secret-drop](https://github.com/aislam23/secret-drop), MIT, commit `a54d43a`, original Claude plugin `0.2.2`. This is an independent Codex adaptation; the Claude plugin is unchanged.
+**Версия: 0.5.0.** Оригинальный проект [aislam23/secret-drop](https://github.com/aislam23/secret-drop), MIT, commit `a54d43a` / Claude plugin `0.2.2`. Эта реализация для Codex ведётся отдельно и не заменяет оригинальный Claude-плагин.
 
-## Current input workflow
+## Что происходит при запросе секретов
 
-- Codex invokes the bundled local MCP tool `secret-drop-local.request_secret` with either one `name` or a `secrets` array (1–12 names plus optional non-secret hints), an existing canonical `project_dir`, and optional destination.
-- One independent **native macOS AppKit dialog** displays each **burgundy-highlighted monospaced name on the LEFT** and an `NSSecureTextField` **on the RIGHT**, in the same row.
-- **Save** stores **only fields actually filled in**. Empty or whitespace-only fields are individually **skipped** and named in the status returned to Codex; they do not cancel the others. All blank fields result in no write and an explicit status. **Cancel** writes nothing.
-- Entered values are saved together in one atomic update to project `.env`, with mode 0600. Existing entries for skipped names remain unchanged; `skipped` means *not entered in this request*, not *absent in file*.
-- GitHub Actions Secrets storage is optional and must be explicitly authorized; it passes each entered value to `gh secret set` on stdin. Multi-key GitHub saves are **not atomic**; per-variable failed/succeeded and skipped names are reported.
-- The model receives **names and save/skip/error statuses only**, never the values. No real secrets in tests. The optional Codex `UserPromptSubmit` pattern guard is an independent heuristic defense after user hook trust.
+1. Codex вызывает локальный MCP-инструмент `secret-drop-local.request_secret` с `name` (один ключ) или `secrets: [{name, hint?}, ...]` (до 12 переменных). Передаёт точный `project_dir` и место сохранения, **не значение ключа**.
+2. На Mac появляется **небольшое отдельное окно AppKit**, не встроенное в поле ввода Codex. Имена переменных отображаются в бордовых моноширинных плашках, по центру горизонтально и вертикально; скрытые поля расположены справа. Для длинного списка есть прокрутка.
+3. Пользователь вводит нужные значения и нажимает Save. **Пустые поля пропускаются независимо**, отмена не пишет ничего. Все заполненные значения одной операцией записываются в `.env` проекта с режимом `0600`; прежние значения пропущенных имён сохраняются.
+4. **После записи локальный процесс сам проверяет файл**: точные записанные значения сравниваются с исходными в памяти процесса, проверяется владелец, регулярный файл и права `0600`. Codex получает только имена и статусы `Saved and verified locally`, `NOT VERIFIED`, `Skipped (not entered)`, без содержимого секретов. Проверка не устанавливает, что внешний сервис примет API-ключ.
+5. Отдельное назначение `github` или `both` требует явного разрешения и репозитория: `gh secret set` получает секрет через stdin. Успешный код возврата `gh` **не доказывает работоспособность ключа** и не является независимым подтверждением внешнего сервиса. GitHub batch не атомарен.
 
-## UI limitation vs original Claude
+## Отличие от Claude Code
 
-Claude Code exposes `AbovePrompt`. Codex Desktop has no **verified supported** composer-adjacent custom plugin input surface. The dialog **remains an independent macOS window**; we do not use overlays attached through Accessibility, private API calls, or binary modifications. This is a documented limitation, not an accepted claim of identical UI.
+В оригинале плашка появляется внутри интерфейса Claude (`AbovePrompt`). Для Codex Desktop на текущем публичном API **не подтверждена возможность** встроить собственный защищённый контрол непосредственно над composer. Не используются Accessibility overlay, приватные API или патчинг бинарника. Отдельное окно остаётся ограничением среды.
 
-## Installation / upgrade on Mac
+## Обновление и проверка
 
 ```sh
 codex plugin marketplace add shzk/secret-drop --ref feat/codex-secret-drop
@@ -24,6 +23,6 @@ codex plugin remove secret-drop-codex@secret-drop-tkrv
 codex plugin add secret-drop-codex@secret-drop-tkrv
 ```
 
-Start a fresh Codex Desktop session to refresh MCP discovery. Request `TEST_ONE` and `TEST_TWO` in an isolated test project. To check partial saving, fill only `TEST_ONE`, then Save: it should report `TEST_ONE` saved and `TEST_TWO` skipped without printing dummy values. `stat -f '%Sp' .env` must show `-rw-------`. Do not `cat` real secret files. Cancel test must not modify `.env`.
+После обновления нужна **новая сессия Codex Desktop**. Проверка в тестовом проекте: запросить `TEST_ONE` и `TEST_TWO`, заполнить только первое вымышленным значением и Save. Codex должен получить `TEST_ONE saved and verified`, `TEST_TWO skipped`; `stat -f '%Sp' .env` должен показать `-rw-------`. В чат **не выводить значения** и не давать модели читать файл. Отдельно проверить Cancel, пустой ввод и запрет чтения секретов инструментами агента.
 
-The local stdio MCP process depends on system Python and macOS Swift/AppKit, with optional authenticated `gh` for explicit GitHub writes. It compiles a SHA-keyed private native dialog executable locally. No public listener/service or paid API is introduced. Tool registration/compile PASS is not a substitute for actual user-side Desktop E2E.
+Реальные API-ключи, production и новые платные интеграции в тестах не используются. Установка, компиляция и unit-тесты не заменяют пользовательскую визуальную приёмку. История испытаний хранится в каноническом Engineering Knowledge.
