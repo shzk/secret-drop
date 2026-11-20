@@ -63,14 +63,20 @@ def prepare_git(root: Path) -> None:
         stream.write("/.env\n")
 
 
-def write_env(root: Path, name: str, value: str) -> None:
+def write_env_batch(root: Path, values: dict[str, str]) -> None:
+    """Validate all values, then atomically update one .env file."""
+    if not values:
+        raise ValueError("no variables to save")
     env = root / ".env"
     if env.is_symlink() or (env.exists() and not env.is_file()):
         raise ValueError(".env is not a regular file")
-    # Validate value before changing the project or .gitignore.
-    quote_env(value)
     old = env.read_text(encoding="utf-8") if env.exists() else ""
-    updated = patched_env(old, name, value)
+    updated = old
+    for name, value in values.items():
+        if not NAME.fullmatch(name):
+            raise ValueError("invalid environment variable name")
+        quote_env(value)  # Validate before changing project files.
+        updated = patched_env(updated, name, value)
     prepare_git(root)
     fd, path = tempfile.mkstemp(prefix=".secret-drop-", dir=root)
     try:
@@ -83,6 +89,11 @@ def write_env(root: Path, name: str, value: str) -> None:
     finally:
         if os.path.exists(path):
             os.unlink(path)
+
+
+def write_env(root: Path, name: str, value: str) -> None:
+    """Compatibility wrapper for the single-secret API."""
+    write_env_batch(root, {name: value})
 
 
 def write_github(name: str, repo: str, value: str) -> bool:
