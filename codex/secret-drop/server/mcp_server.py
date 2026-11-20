@@ -120,11 +120,12 @@ def validate(args: object) -> tuple[str, Path, str, str | None, str]:
         output_file = root / ".env"
         if output_file.is_symlink() or (output_file.exists() and not output_file.is_file()):
             raise ValueError("unsafe .env path")
-    target = {
-        "env": str(root / ".env"),
-        "github": "GitHub Actions Secrets: " + repo,
-        "both": str(root / ".env") + " and GitHub Actions Secrets: " + repo,
-    }[destination]
+    if destination == "env":
+        target = str(root / ".env")
+    elif destination == "github":
+        target = "GitHub Actions Secrets: " + repo
+    else:
+        target = str(root / ".env") + " and GitHub Actions Secrets: " + repo
     return name, root, destination, repo, target
 
 
