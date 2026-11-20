@@ -1,16 +1,18 @@
 ---
 name: secret-drop-codex
-description: Use when one or multiple credentials must be entered privately into a project .env or explicitly approved GitHub Actions Secrets from Codex on macOS.
+description: Use when one or multiple credentials must be entered securely into a local project .env or explicitly approved GitHub Actions Secrets via Codex on macOS.
 ---
 
 # Secret Drop for Codex
 
-**Call `secret-drop-local.request_secret`.** Never ask the human to paste a secret in conversation, terminal commands, tool arguments or an agent message. Use `name` for a single variable (legacy), or `secrets: [{name: "TEST_ONE"}, {name: "TEST_TWO"}]` for multiple values in one native macOS modal. Each variable is displayed in **burgundy monospaced type on the left**, with a separate **masked field on the right**. Pass the actual existing canonical absolute `project_dir`; never invent a different target directory.
+**Invoke `secret-drop-local.request_secret`** with a single `name`, or multiple `secrets: [{name: "TEST_ONE"}, {name: "TEST_TWO"}]`, and the canonical existing absolute `project_dir`. Never request a secret value through conversation, terminal commands, MCP arguments or another agent. The user gets a compact native macOS AppKit modal with **burgundy monospaced centered variable chips on the left** and **masked fields on the right**. The dialog is separate from Codex's composer.
 
-**Partial entry is supported.** The person may fill only some fields and click Save. Entered variables are written in one atomic `.env` update (0600), while blank fields are skipped and explicitly named in the returned status. Existing saved values for skipped variables remain unchanged. All blank fields or Cancel create no writes. Do not treat `skipped` as proof the variable is absent from an existing file. Never read/print a value to verify it.
+**Partial entry:** only populated fields are saved. Each blank field is reported as `Skipped (not entered)`; existing previous values in the file may still exist and are not touched. All blank or Cancel means no write. Project `.env` writes are atomic with mode `0600`.
 
-Default `destination: "env"`; `"github"` or `"both"` must include a known `github_repo` and receive separate authorization. GitHub secrets are saved individually; observe possible mixed outcomes and report the exact model-safe status. The MCP tool sends **only variable names, destination and save/skip/error statuses** to the model.
+**Verification:** after writing `.env`, the trusted local helper reads the file **inside its own process only** to check that the exact entered values persisted and that owner, file type and permissions are correct. The model receives **only per-name saved/verified, skipped and error statuses**, never the secret bytes. `Saved and verified locally` confirms persistence; **it does not mean a remote API key is valid**. If verification returns `NOT VERIFIED`, report this accurately; do not use the credential as ready or ask the user to expose it for diagnosis.
 
-**UI boundary:** The native dialog is separate from Codex Desktop, **not inside/above its composer**. No public API has been verified that permits mounting a secret-entry field into the Codex composer; do not fake that with Accessibility overlays or private APIs. The `UserPromptSubmit` hook separately blocks some recognized accidental pastes only once trusted by the user, and is not complete DLP.
+Optional GitHub Secrets output must be explicitly authorized and accompanied by `github_repo`; remote CLI write success is separate from remote credential validity and GitHub multi-write may partly fail. Do not treat `Skipped` as proof an existing variable is absent.
 
-If the tool is unavailable, do not ask for credentials in chat. Agent filesystem permissions can still expose existing `.env`; protect real credentials using OS/filesystem access policies. Use only synthetic keys during tests.
+The `UserPromptSubmit` guard heuristically blocks some accidental pastes **after user trust** and is not comprehensive DLP. A running agent with filesystem access might still read `.env`; prohibit that separately. Do not ask the agent to open or print the file. On non-macOS or no MCP tool, report unsupported secure entry rather than requesting a key in chat.
+
+Codex Desktop currently has **no verified supported plugin API to mount this UI next to the composer**. Do not imitate Claude's `AbovePrompt` using Accessibility overlays, private APIs or modifications of Codex. Use only synthetic keys for acceptance.
