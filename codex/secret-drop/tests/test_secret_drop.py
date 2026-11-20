@@ -95,62 +95,101 @@ class WriterTests(unittest.TestCase):
 
 
 class NativeMcpTests(unittest.TestCase):
-    def test_local_masked_gui_saves_without_exposing_value(self):
+    def _fake_home(self, root):
+        return mock.patch.object(server.Path, "home", return_value=root.parent)
+
+    def test_single_masked_gui_alias_saves_without_exposing_value(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td).resolve()
-            with mock.patch.object(server.Path, "home", return_value=root.parent), \
-                 mock.patch.object(server, "native_dialog", return_value="Fixture-Only-98765") as modal:
+            with self._fake_home(root), \
+                 mock.patch.object(server, "native_dialog",
+                     return_value={"TEST_SECRET_DROP": "Fixture-Only-98765"}) as modal:
                 result = server.request_secret({"name": "TEST_SECRET_DROP", "project_dir": str(root)})
-            self.assertEqual(result["isError"], False, result)
-            self.assertEqual(modal.call_args.args[0], "TEST_SECRET_DROP")
+            self.assertFalse(result["isError"])
+            self.assertEqual(modal.call_args.args[0][0]["name"], "TEST_SECRET_DROP")
             self.assertIn(str(root / ".env"), modal.call_args.args[1])
-            serialized = json.dumps(result)
-            self.assertNotIn("Fixture-Only-98765", serialized)
+            self.assertNotIn("Fixture-Only-98765", json.dumps(result))
             self.assertEqual((root / ".env").read_text(), "TEST_SECRET_DROP=Fixture-Only-98765\n")
             self.assertEqual(stat.S_IMODE((root / ".env").stat().st_mode), 0o600)
+
+    def test_two_secrets_one_dialog_and_atomic_env(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            fields = [{"name": "APP_KEY", "hint": "For test app"}, {"name": "SERVICE_TOKEN"}]
+            values = {"APP_KEY": "FakeValue12", "SERVICE_TOKEN": "TestOnly345"}
+            with self._fake_home(root), \
+                 mock.patch.object(server, "native_dialog", return_value=values) as modal:
+                result = server.request_secret({"secrets": fields, "project_dir": str(root)})
+            self.assertFalse(result["isError"])
+            modal.assert_called_once()
+            self.assertEqual(len(modal.call_args.args[0]), 2)
+            self.assertEqual((root / ".env").read_text(), "APP_KEY=FakeValue12\nSERVICE_TOKEN=TestOnly345\n")
+            self.assertEqual(stat.S_IMODE((root / ".env").stat().st_mode), 0o600)
+            self.assertIn("APP_KEY, SERVICE_TOKEN", json.dumps(result))
+            for value in values.values():
+                self.assertNotIn(value, json.dumps(result))
+
+    def test_batch_validation_failure_makes_no_partial_changes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            file = root / ".env"
+            file.write_text("KEEP=original\n")
+            with self.assertRaises(ValueError):
+                helper.write_env_batch(root, {"A": "Valid123", "B": "newline\nunsafe"})
+            self.assertEqual(file.read_text(), "KEEP=original\n")
 
     def test_cancel_does_not_touch_project(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td).resolve()
-            with mock.patch.object(server.Path, "home", return_value=root.parent), \
+            with self._fake_home(root), \
                  mock.patch.object(server, "native_dialog", side_effect=server.Cancelled):
-                result = server.request_secret({"name": "FAKE_KEY", "project_dir": str(root)})
+                result = server.request_secret({"secrets": [{"name": "ONE"}, {"name": "TWO"}],
+                                                "project_dir": str(root)})
             self.assertTrue(result["isError"])
             self.assertFalse((root / ".env").exists())
 
-    def test_rejects_unexpected_value_input_without_opening_gui(self):
+    def test_rejects_values_duplicate_names_and_conflicting_shapes_without_gui(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td).resolve()
-            with mock.patch.object(server.Path, "home", return_value=root.parent), \
-                 mock.patch.object(server, "native_dialog") as modal:
-                result = server.request_secret({
-                    "name": "FAKE_KEY", "project_dir": str(root), "value": "FAKE_NOT_ALLOWED"
-                })
-            self.assertTrue(result["isError"])
-            modal.assert_not_called()
-            self.assertNotIn("FAKE_NOT_ALLOWED", json.dumps(result))
+            bad_payloads = [
+                {"name": "A", "value": "FAKE_NOT_ALLOWED"},
+                {"secrets": [{"name": "A", "value": "FAKE_NOT_ALLOWED"}]},
+                {"secrets": [{"name": "A"}, {"name": "A"}]},
+                {"secrets": [{"name": "A"}], "name": "B"},
+                {"secrets": []},
+                {"secrets": [{"name": "A"}] * 13},
+            ]
+            with self._fake_home(root), mock.patch.object(server, "native_dialog") as modal:
+                for req in bad_payloads:
+                    result = server.request_secret({**req, "project_dir": str(root)})
+                    self.assertTrue(result["isError"], req)
+                    self.assertNotIn("FAKE_NOT_ALLOWED", json.dumps(result))
+                modal.assert_not_called()
+            self.assertFalse((root / ".env").exists())
 
-    def test_only_mac_script_receives_nonsecret_metadata(self):
-        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout="FixtureOnly456\n", stderr="")
+    def test_swift_gui_receives_only_variable_names_in_stdin_and_returns_values_locally(self):
+        synthetic = {"status": "entered", "values": {"EXAMPLE_KEY": "FixtureOnly456", "SECOND": "AnotherFake99"}}
+        proc = subprocess.CompletedProcess(args=[], returncode=0, stdout=json.dumps(synthetic), stderr="")
         with mock.patch.object(server.platform, "system", return_value="Darwin"), \
+             mock.patch.object(server, "dialog_binary", return_value=Path("/fake/native-dialog")), \
              mock.patch.object(server.subprocess, "run", return_value=proc) as runner:
-            value = server.native_dialog("EXAMPLE_KEY", "/tmp/test/.env")
-        self.assertEqual(value, "FixtureOnly456")
+            values = server.native_dialog([{"name": "EXAMPLE_KEY"}, {"name": "SECOND"}], "/tmp/test/.env")
+        self.assertEqual(values, synthetic["values"])
         args, kwargs = runner.call_args
-        self.assertEqual(args[0][0], "/usr/bin/osascript")
-        self.assertIn("with hidden answer", args[0][2])
+        self.assertEqual(args[0][0], "/fake/native-dialog")
+        self.assertEqual(json.loads(kwargs["input"])["fields"][0]["name"], "EXAMPLE_KEY")
         self.assertNotIn("FixtureOnly456", json.dumps(args[0]))
-        self.assertEqual(kwargs["env"]["SECRET_DROP_VARIABLE_NAME"], "EXAMPLE_KEY")
+        self.assertNotIn("FixtureOnly456", kwargs["input"])
         self.assertTrue(kwargs["capture_output"])
 
-    def test_mcp_stdio_handshake_and_tool_without_secret_value_field(self):
+    def test_mcp_stdio_handshake_and_multi_schema(self):
         payload = [
             {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
                 "protocolVersion": "2025-06-18", "capabilities": {},
                 "clientInfo": {"name": "synthetic-test", "version": "1.0"}
             }},
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
-            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
         ]
         reply = subprocess.run(
             [sys.executable, "-I", str(ROOT / "server" / "mcp_server.py")],
@@ -160,25 +199,31 @@ class NativeMcpTests(unittest.TestCase):
         lines = [json.loads(line) for line in reply.stdout.splitlines()]
         self.assertEqual(len(lines), 2, reply)
         self.assertEqual(lines[0]["result"]["serverInfo"]["name"], "secret-drop-local")
-        tool = lines[1]["result"]["tools"][0]
-        self.assertEqual(tool["name"], "request_secret")
-        self.assertNotIn("value", tool["inputSchema"]["properties"])
+        self.assertEqual(lines[0]["result"]["serverInfo"]["version"], "0.3.0")
+        schema = lines[1]["result"]["tools"][0]["inputSchema"]
+        self.assertIn("secrets", schema["properties"])
+        self.assertEqual(schema["properties"]["secrets"]["maxItems"], 12)
+        self.assertNotIn("value", schema["properties"])
         self.assertEqual(reply.stderr, "")
 
-    def test_github_only_opt_in_does_not_write_env_or_leak(self):
+    def test_github_only_multi_opt_in_does_not_write_env_or_leak(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td).resolve()
-            with mock.patch.object(server.Path, "home", return_value=root.parent), \
-                 mock.patch.object(server, "native_dialog", return_value="FakeNoNetwork123"), \
+            fake_values = {"DEMO_KEY": "FakeNoNetwork123", "SECOND": "AnotherFixture456"}
+            with self._fake_home(root), \
+                 mock.patch.object(server, "native_dialog", return_value=fake_values), \
                  mock.patch.object(server, "write_github", return_value=True) as gh:
                 result = server.request_secret({
-                    "name": "DEMO_KEY", "project_dir": str(root),
+                    "secrets": [{"name": "DEMO_KEY"}, {"name": "SECOND"}],
+                    "project_dir": str(root),
                     "destination": "github", "github_repo": "example/demo",
                 })
             self.assertFalse(result["isError"])
             self.assertFalse((root / ".env").exists())
-            self.assertEqual(gh.call_args.args[:2], ("DEMO_KEY", "example/demo"))
-            self.assertNotIn("FakeNoNetwork123", json.dumps(result))
+            self.assertEqual(gh.call_count, 2)
+            self.assertEqual(gh.call_args_list[0].args[:2], ("DEMO_KEY", "example/demo"))
+            for value in fake_values.values():
+                self.assertNotIn(value, json.dumps(result))
 
 
 if __name__ == "__main__":
