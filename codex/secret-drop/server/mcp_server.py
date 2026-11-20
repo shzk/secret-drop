@@ -212,6 +212,8 @@ def request_secret(args: object) -> dict:
                 or not set(values).issubset(names_requested)
                 or any(not isinstance(v, str) or not v for v in values.values())):
             return result("Secret Drop: invalid dialog result; nothing saved.", True)
+
+        entered_names = [name for name in names_requested if name in values]
         skipped = [name for name in names_requested if name not in values]
         skipped_note = (
             " Skipped (not entered): " + ", ".join(skipped) + "."
@@ -222,39 +224,62 @@ def request_secret(args: object) -> dict:
                 "Secret Drop: No values entered; nothing saved." + skipped_note, True
             )
 
-        # Validate entered values before any local or remote write. Unentered
-        # names are never overwritten; any existing .env entries remain intact.
+        # The local helper reads the file *within this process* to check that
+        # the exact user-entered bytes survived the atomic write and mode is
+        # 0600. It never returns file contents to Codex.
         if destination in ("env", "both"):
             for value in values.values():
                 quote_env(value)
             write_env_batch(root, values)
-        saved = []
+            verified = verify_env_written(root, values)
+            unverified = [name for name in entered_names if not verified.get(name)]
+            if unverified:
+                good = [name for name in entered_names if verified.get(name)]
+                return result(
+                    "Secret Drop: Local write NOT VERIFIED for: " +
+                    ", ".join(unverified) + ". Verified locally: " +
+                    (", ".join(good) if good else "none") + "." +
+                    skipped_note +
+                    " Do not assume unverified values are usable; no secret values returned.",
+                    True,
+                )
+
+        local_note = (
+            "Saved and verified locally (exact value, file owner, mode 0600): " +
+            ", ".join(entered_names) + " to " + str(root / ".env") + ". "
+            if destination in ("env", "both") else ""
+        )
+
+        if destination == "env":
+            return result("Secret Drop: " + local_note + skipped_note +
+                          " No secret values returned to Codex.")
+
+        # GitHub explicitly opted in. A zero exit code confirms gh accepted
+        # the write request, but NOT that the credential works with its API.
+        succeeded = []
         failed = []
-        if destination in ("github", "both"):
-            for name, value in values.items():
-                if write_github(name, repo, value):
-                    saved.append(name)
-                else:
-                    failed.append(name)
-        names = ", ".join(name for name in names_requested if name in values)
-        if failed:
-            return result(
-                "Secret Drop: entered: " + names + ". Local .env " +
-                ("saved. " if destination == "both" else "not used. ") +
-                "GitHub save failed for: " + ", ".join(failed) +
-                "; succeeded for: " + ", ".join(saved) +
-                "." + skipped_note + " No secret values returned.", True
-            )
+        for name in entered_names:
+            if write_github(name, repo, values[name]):
+                succeeded.append(name)
+            else:
+                failed.append(name)
+        github_note = (
+            "GitHub CLI reported saved: " +
+            (", ".join(succeeded) if succeeded else "none") + ". "
+            "GitHub CLI failed: " +
+            (", ".join(failed) if failed else "none") + "."
+        )
         return result(
-            "Secret Drop: " + names + " saved to " + target + "." +
-            skipped_note + " No secret values returned to the agent."
+            "Secret Drop: " + local_note + github_note + skipped_note +
+            " Credential validity at external services was NOT tested. "
+            "No secret values returned to Codex.",
+            bool(failed),
         )
     except (ValueError, OSError, UnicodeError):
-        return result("Secret Drop: could not save the entered values. Nothing disclosed.", True)
+        return result("Secret Drop: could not save or verify entered values. No secret values disclosed.", True)
     finally:
         if isinstance(values, dict):
             values.clear()
-
 
 def handle(request: dict) -> dict | None:
     method = request.get("method")
