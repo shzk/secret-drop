@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "secret-drop-codex",
-  "version": "0.1.0",
-  "description": "Recognized credential prompt guard for Codex, with out-of-chat masked local input and optional GitHub Secrets.",
+  "version": "0.2.0",
+  "description": "Native macOS masked secret dialog via local MCP request_secret, plus optional Codex prompt guard.",
   "author": {
     "name": "TKRV Engineering (adapted from Artem Islamov's Secret Drop)"
   },
@@ -19,7 +19,7 @@
       "hooks": "./hooks/hooks.json",
       "interface": {
         "displayName": "Secret Drop for Codex",
-        "shortDescription": "Credential prompt guard and local masked input",
+        "shortDescription": "Native masked key dialog and credential guard",
         "developerName": "TKRV Engineering",
         "category": "Development"
       }
