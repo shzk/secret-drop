@@ -13,7 +13,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bin"))
-from secret_drop import NAME, REPO, write_env_batch, write_github, quote_env  # noqa: E402
+from secret_drop import NAME, REPO, write_env_batch, verify_env_written, write_github, quote_env  # noqa: E402
 
 PROTOCOL = "2025-06-18"
 TOOL = {
