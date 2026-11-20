@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "secret-drop-codex",
-  "version": "0.3.0",
-  "description": "Native macOS masked multi-secret dialog with highlighted monospaced variable labels, status-only MCP and Codex prompt guard.",
+  "version": "0.4.0",
+  "description": "Secure native macOS multi-secret input with horizontal burgundy variable labels; partial save with per-variable skipped status and Codex prompt guard.",
   "author": {
     "name": "TKRV Engineering (adapted from Artem Islamov's Secret Drop)"
   },
@@ -19,7 +19,7 @@
       "hooks": "./hooks/hooks.json",
       "interface": {
         "displayName": "Secret Drop for Codex",
-        "shortDescription": "Native multi-key masked input and prompt guard",
+        "shortDescription": "Multi-secret masked input, partial save and prompt guard",
         "developerName": "TKRV Engineering",
         "category": "Development"
       }
