@@ -47,38 +47,53 @@ private func run() {
     alert.informativeText =
         "Enter \(incoming.fields.count) secret value(s).\n" +
         "Save to: \(incoming.destination)\n" +
-        "The values will not be sent to Codex."
+        "Blank fields will be skipped. Values will not be sent to Codex."
     alert.addButton(withTitle: "Save")
     alert.addButton(withTitle: "Cancel")
 
     let width: CGFloat = 475
-    let rowHeight: CGFloat = 78
+    let rowHeight: CGFloat = 48
     let totalHeight = CGFloat(incoming.fields.count) * rowHeight + 8
     let visibleHeight = min(totalHeight, CGFloat(385))
     let doc = FlippedView(frame: NSRect(x: 0, y: 0, width: width - 22, height: totalHeight))
+    let labelX: CGFloat = 8
+    let labelColumnWidth: CGFloat = 190
+    let inputX: CGFloat = 204
+    let inputWidth = width - inputX - 29
+
+    // Burgundy is deliberately independent of the user's macOS accent color.
+    let burgundy = NSColor(name: NSColor.Name("SecretDropBurgundy")) { appearance in
+        if appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua {
+            return NSColor(srgbRed: 0.93, green: 0.52, blue: 0.62, alpha: 1.0)
+        }
+        return NSColor(srgbRed: 0.52, green: 0.12, blue: 0.24, alpha: 1.0)
+    }
     var secureFields: [NSSecureTextField] = []
 
     for (index, entry) in incoming.fields.enumerated() {
         let y = CGFloat(index) * rowHeight + 6
-        let name = NSTextField(labelWithString: entry.name)
-        let codeFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .semibold)
+        let codeFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .semibold)
         let codeWidth = (entry.name as NSString).size(withAttributes: [.font: codeFont]).width
-        name.frame = NSRect(x: 8, y: y, width: min(codeWidth + 20, width - 50), height: 21)
+        let name = NSTextField(labelWithString: entry.name)
+        name.frame = NSRect(x: labelX, y: y + 3,
+                            width: min(codeWidth + 18, labelColumnWidth - 14), height: 27)
         name.font = codeFont
-        name.textColor = .controlAccentColor
+        name.textColor = burgundy
         name.drawsBackground = true
-        name.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.10)
+        name.backgroundColor = burgundy.withAlphaComponent(0.09)
         name.wantsLayer = true
         name.layer?.cornerRadius = 5
         name.lineBreakMode = .byTruncatingMiddle
         name.toolTip = entry.name
         doc.addSubview(name)
 
-        let secret = NSSecureTextField(frame: NSRect(x: 8, y: y + 25, width: width - 60, height: 29))
+        // Place each masked value field directly to the RIGHT of its variable.
+        let secret = NSSecureTextField(frame: NSRect(x: inputX, y: y + 2,
+                                                      width: inputWidth, height: 30))
         secret.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
         secret.placeholderString = (entry.hint?.isEmpty == false)
             ? String(entry.hint!.prefix(120))
-            : "Paste a secret for \(entry.name)"
+            : "Secret value (optional)"
         secret.isBezeled = true
         secret.bezelStyle = .roundedBezel
         secret.usesSingleLineMode = true
@@ -105,11 +120,11 @@ private func run() {
     var values: [String: String] = [:]
     for (idx, entry) in incoming.fields.enumerated() {
         let value = secureFields[idx].stringValue
-        if value.isEmpty {
-            writeResult(["status": "empty"])
-            return
+        // Save only fields that the person actually filled. Blank means "skip".
+        // Do not trim a nonempty credential: leading/trailing whitespace may be intentional.
+        if !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            values[entry.name] = value
         }
-        values[entry.name] = value
     }
     writeResult(["status": "entered", "values": values])
 }
