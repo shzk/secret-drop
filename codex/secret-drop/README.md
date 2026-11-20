@@ -1,29 +1,28 @@
-# Secret Drop for Codex — native macOS dialog adapter
+# Secret Drop for Codex — native multi-key macOS dialog
 
-**Version 0.2.0 (under test)**. Upstream: [aislam23/secret-drop](https://github.com/aislam23/secret-drop), MIT, upstream `a54d43a`, Claude plugin `0.2.2`. This is an independent Codex implementation, **not** the original Claude UI.
+**Version 0.3.0 (E2E acceptance pending).** Original project: [aislam23/secret-drop](https://github.com/aislam23/secret-drop), MIT, upstream commit `a54d43a`, Claude plugin `0.2.2`. Our fork keeps the original Claude plugin separate.
 
-## Workflow
+## Behavior
 
-1. Codex discovers local MCP tool `secret-drop-local.request_secret`.
-2. When the user wants to enter a credential, Codex invokes `request_secret` with its **variable name, actual project path and optional destination**. It never sends the value.
-3. A native macOS `display dialog … with hidden answer` window opens. The window shows the variable name and exact destination, with Cancel/Save.
-4. The helper writes `.env` locally with `0600` permissions (refuses symlinks, tracked Git files, invalid paths) or sends the secret to GitHub Actions via `gh secret set` standard input when explicitly requested. Tool output gives only name and save status.
+- Codex calls local MCP tool `secret-drop-local.request_secret` with either `name` (one variable) or `secrets` (1–12 entries with `name` and optional short `hint`), plus an existing canonical `project_dir`.
+- **One native AppKit dialog** shows each variable name as a **highlighted monospaced label** and its own `NSSecureTextField`. The dialog supports Cancel/Save and scrolls for longer lists.
+- The model **never** receives secret values or needs the user to run a terminal command. Values travel only through a local child process pipe and are atomically stored in a `0600` project `.env` (or explicitly requested GitHub Actions Secrets via `gh secret set` stdin).
+- If any variable is empty or the user cancels, nothing is stored; GitHub multi-save is not atomic, and failures return status without values.
+- Supports the previous single-secret `name` call. The optional `UserPromptSubmit` hook is independently trusted and is only heuristic protection.
 
-No terminal command or chat key entry is necessary. `UserPromptSubmit` hook remains an optional second line of defense against accidental pastes and must be trusted by the user via `/hooks`. Detection is heuristic, not perfect.
+## Limitation vs Claude
 
-## Install / update (Codex Desktop / CLI on macOS)
+**This is not an in-composer UI.** Claude Code supports the author's `AbovePrompt` extension surface; the public Codex Desktop plugin API does not establish an equivalent composer-adjacent custom view. We do not modify/bypass the native Codex UI or use accessibility/window spoofing. The dialog is an independent macOS window.
+
+## Installation / upgrading
 
 ```sh
 codex plugin marketplace add shzk/secret-drop --ref feat/codex-secret-drop
+codex plugin marketplace upgrade secret-drop-tkrv
+codex plugin remove secret-drop-codex@secret-drop-tkrv
 codex plugin add secret-drop-codex@secret-drop-tkrv
 ```
 
-The portable root `mcp.json` bundles a local stdio process and needs only system Python 3.10+, `osascript` (macOS), and optionally authenticated `gh` for GitHub saves. No long-running public service is introduced. Install/enable this plugin in **Codex desktop** on the same Mac where the dialog should appear; remote/headless execution cannot display the window. After upgrading an installed plugin, check `codex plugin list` for version 0.2.0 and start a new Codex session so MCP discovery refreshes.
+Run a **fresh Codex Desktop** session and ask for two test variables, e.g. `DEMO_ALPHA` and `DEMO_BETA`, with destination `.env` in a throwaway test project. The plugin includes a local stdio MCP server, built-in Python and AppKit Swift code. It compiles the native dialog once per source SHA to a user-private cache under `~/.cache/secret-drop-codex-dialog`. No server/tunnel/public listener or paid API is introduced.
 
-## Security and limitations
-
-- The GUI value travels from the OS dialog's `osascript` stdout **into the local MCP process's private pipe**, not its protocol stdout; neither the prompt text nor any key bytes are returned as tool content or printed to logs by this implementation.
-- The agent might still read `.env` through unrestricted filesystem tools; use a protected store or restrict agent filesystem access for real credentials. Never ask the agent to print or verify the key.
-- Invalid project paths, modal cancellation and all failed writes return a value-free error. The tool refuses secret values in its input schema.
-- macOS system dialogs may require an interactive GUI session and proper OS permissions. CLI and Desktop E2E require separate checks. Unsupported hosts cannot use this dialog.
-- The plugin code is public, and no actual secrets or real credentials are committed or used in tests.
+Tested source checks and actual Desktop acceptance have **different** evidence levels; see the canonical Engineering Knowledge receipt. Never test with actual credentials or print `.env` values. ChatGPT Web does not use this local dialog.
