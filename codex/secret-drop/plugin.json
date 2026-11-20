@@ -1,0 +1,28 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "secret-drop-codex",
+  "version": "0.1.0",
+  "description": "Recognized credential prompt guard for Codex, with out-of-chat masked local input and optional GitHub Secrets.",
+  "author": {
+    "name": "TKRV Engineering (adapted from Artem Islamov's Secret Drop)"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/shzk/secret-drop",
+  "keywords": [
+    "secrets",
+    "codex",
+    "prompt-guard",
+    "dotenv"
+  ],
+  "extensions": {
+    "com.openai": {
+      "hooks": "./hooks/hooks.json",
+      "interface": {
+        "displayName": "Secret Drop for Codex",
+        "shortDescription": "Credential prompt guard and local masked input",
+        "developerName": "TKRV Engineering",
+        "category": "Development"
+      }
+    }
+  }
+}
