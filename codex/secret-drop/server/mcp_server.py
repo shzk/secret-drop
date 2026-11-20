@@ -25,8 +25,8 @@ TOOL = {
         "font; each value has its own masked input. DO NOT request or supply the "
         "values in chat, shell, or MCP arguments. Store in project_dir/.env (0600) "
         "and optionally explicitly authorized GitHub Actions Secrets. The model "
-        "receives ONLY variable names and save status. The window is a separate "
-        "native macOS modal, not an overlay attached to Codex composer."
+        "receives ONLY variable names and save/skip status. Blank fields are skipped "
+        "without cancelling the rest; the native macOS window is separate from Codex."
     ),
     "inputSchema": {
         "type": "object",
@@ -183,7 +183,8 @@ def native_dialog(fields: list[dict[str, str]], target: str) -> dict[str, str]:
             raise Cancelled()
         values = response["values"]
         expected = {f["name"] for f in fields}
-        if not isinstance(values, dict) or set(values) != expected:
+        # Empty fields are intentionally omitted; reject unexpected variable names.
+        if not isinstance(values, dict) or not set(values).issubset(expected):
             raise Cancelled()
         if any(not isinstance(v, str) or not v for v in values.values()):
             raise Cancelled()
@@ -206,7 +207,23 @@ def request_secret(args: object) -> dict:
     except (Cancelled, RuntimeError, OSError):
         return result("Secret Drop: cancelled or native dialog unavailable. Nothing saved.", True)
     try:
-        # All values validated BEFORE writing or sending anything.
+        names_requested = [field["name"] for field in fields]
+        if (not isinstance(values, dict)
+                or not set(values).issubset(names_requested)
+                or any(not isinstance(v, str) or not v for v in values.values())):
+            return result("Secret Drop: invalid dialog result; nothing saved.", True)
+        skipped = [name for name in names_requested if name not in values]
+        skipped_note = (
+            " Skipped (not entered): " + ", ".join(skipped) + "."
+            if skipped else ""
+        )
+        if not values:
+            return result(
+                "Secret Drop: No values entered; nothing saved." + skipped_note, True
+            )
+
+        # Validate entered values before any local or remote write. Unentered
+        # names are never overwritten; any existing .env entries remain intact.
         if destination in ("env", "both"):
             for value in values.values():
                 quote_env(value)
@@ -219,23 +236,24 @@ def request_secret(args: object) -> dict:
                     saved.append(name)
                 else:
                     failed.append(name)
-        names = ", ".join(values)
+        names = ", ".join(name for name in names_requested if name in values)
         if failed:
             return result(
-                "Secret Drop: local .env " +
+                "Secret Drop: entered: " + names + ". Local .env " +
                 ("saved. " if destination == "both" else "not used. ") +
                 "GitHub save failed for: " + ", ".join(failed) +
                 "; succeeded for: " + ", ".join(saved) +
-                ". No secret values returned.", True
+                "." + skipped_note + " No secret values returned.", True
             )
         return result(
-            "Secret Drop: " + names + " saved to " + target +
-            ". No secret values returned to the agent."
+            "Secret Drop: " + names + " saved to " + target + "." +
+            skipped_note + " No secret values returned to the agent."
         )
     except (ValueError, OSError, UnicodeError):
-        return result("Secret Drop: could not save the requested values. Nothing disclosed.", True)
+        return result("Secret Drop: could not save the entered values. Nothing disclosed.", True)
     finally:
-        values.clear()
+        if isinstance(values, dict):
+            values.clear()
 
 
 def handle(request: dict) -> dict | None:
