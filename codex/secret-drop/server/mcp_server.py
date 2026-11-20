@@ -290,7 +290,7 @@ def handle(request: dict) -> dict | None:
         payload = {
             "protocolVersion": PROTOCOL,
             "capabilities": {"tools": {"listChanged": False}},
-            "serverInfo": {"name": "secret-drop-local", "version": "0.4.0"},
+            "serverInfo": {"name": "secret-drop-local", "version": "0.5.0"},
             "instructions": (
                 "Call request_secret with ONE 'name' or MULTIPLE 'secrets' entries; "
                 "a single native masked macOS window collects values. Never ask for, "
