@@ -7,7 +7,7 @@
     ".": "./index.js"
   },
   "license": "MIT",
-  "description": "OpenCode v2 pre-admission secret prompt replacement",
+  "description": "Experimental, host-E2E-unverified OpenCode secret prompt transform; not a pre-admission security guarantee",
   "dependencies": {
     "@opencode/plugin": "*"
   }

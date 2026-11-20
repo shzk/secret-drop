@@ -9,11 +9,18 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import subprocess
 import sys
+from dataclasses import dataclass
+import stat
+import unicodedata
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "bin"))
-from secret_drop import NAME, REPO, write_env_batch, verify_env_written, write_github, quote_env  # noqa: E402
+from secret_drop import (  # noqa: E402
+    NAME, REPO, env_file_parts, open_trusted_root, _walk_parent,
+    write_env_batch, verify_env_written, write_github, quote_env,
+)
 
 PROTOCOL = "2025-06-18"
 TOOL = {
@@ -23,8 +30,9 @@ TOOL = {
         "input window. Use 'secrets': [{name:'OPENAI_API_KEY'}, {name:'SERVICE_TOKEN'}] "
         "for multiple variables, or legacy 'name' for one. Names use a monospaced "
         "font; each value has its own masked input. DO NOT request or supply the "
-        "values in chat, shell, or MCP arguments. Store in project_dir/.env (0600) "
-        "and optionally explicitly authorized GitHub Actions Secrets. The model "
+        "values in chat, shell, or MCP arguments. Store in project_dir/.env or a "
+        "safe existing-parent nested .env.* target (0600), and optionally explicitly "
+        "human-confirmed GitHub Actions Secrets. The model "
         "receives ONLY variable names and save/skip status. Blank fields are skipped "
         "without cancelling the rest; the native macOS window is separate from Codex."
     ),
@@ -65,6 +73,19 @@ TOOL = {
                 "type": "string",
                 "description": "Required for GitHub destinations, explicit owner/repository.",
             },
+            "github_environment": {
+                "type": "string",
+                "description": "Optional explicit GitHub deployment environment for environment secrets.",
+            },
+            "env_file": {
+                "type": "string",
+                "description": "Existing-project relative .env or nested .env.* target; default .env.",
+            },
+            "reason": {
+                "type": "string",
+                "description": "Short plain-text reason shown to the human, never a destination authority.",
+                "maxLength": 240,
+            },
         },
         "required": ["project_dir"],
         "additionalProperties": False,
@@ -76,9 +97,54 @@ class Cancelled(Exception):
     pass
 
 
-def validate(args: object) -> tuple[list[dict[str, str]], Path, str, str | None, str]:
+@dataclass(frozen=True)
+class NativeResponse:
+    values: dict[str, str]
+    destination_confirmed: bool
+    github_confirmed: bool
+
+
+def plain_text(value: object, limit: int) -> str:
+    if not isinstance(value, str) or len(value) > limit:
+        raise ValueError("invalid display text")
+    if any(unicodedata.category(char).startswith("C") for char in value):
+        raise ValueError("control characters are not allowed")
+    return value
+
+
+def trusted_project(raw_root: object) -> Path:
+    raw = plain_text(raw_root, 4096)
+    if not raw or not Path(raw).is_absolute():
+        raise ValueError("project_dir must be an absolute path")
+    given = Path(raw)
+    if given.is_symlink() or not given.is_dir() or given.resolve() != given:
+        raise ValueError("project_dir must be an existing canonical directory, not a symlink")
+    root = given.resolve()
+    home = Path.home().resolve()
+    if root == home or home not in root.parents:
+        raise ValueError("project_dir must be an existing directory within the user's home")
+    ancestry = [home]
+    current = home
+    for component in root.relative_to(home).parts:
+        current = current / component
+        ancestry.append(current)
+    for directory in ancestry:
+        try:
+            info = directory.lstat()
+        except OSError as error:
+            raise ValueError("unsafe project directory") from error
+        if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+                or stat.S_IMODE(info.st_mode) & (stat.S_IWGRP | stat.S_IWOTH)):
+            raise ValueError("unsafe project directory")
+    fd = open_trusted_root(root)
+    os.close(fd)
+    return root
+
+
+def validate(args: object) -> tuple[list[dict[str, str]], Path, str, str | None, str | None, str, str, str]:
     if not isinstance(args, dict) or set(args) - {
-        "name", "secrets", "project_dir", "destination", "github_repo"
+        "name", "secrets", "project_dir", "destination", "github_repo",
+        "github_environment", "env_file", "reason",
     }:
         raise ValueError("invalid parameters; do not include secret values")
     if ("name" in args) == ("secrets" in args):
@@ -92,47 +158,53 @@ def validate(args: object) -> tuple[list[dict[str, str]], Path, str, str | None,
         if not isinstance(item, dict) or set(item) - {"name", "hint"}:
             raise ValueError("invalid secret field; values are forbidden")
         name = item.get("name")
-        hint = item.get("hint", "")
+        hint = plain_text(item.get("hint", ""), 120)
         if not isinstance(name, str) or not NAME.fullmatch(name) or len(name) > 128:
             raise ValueError("invalid variable name")
-        if not isinstance(hint, str) or len(hint) > 120:
-            raise ValueError("invalid hint")
         if name in seen:
             raise ValueError("duplicate variable name")
         seen.add(name)
         fields.append({"name": name, "hint": hint})
     destination = args.get("destination", "env")
     repo = args.get("github_repo")
+    environment = args.get("github_environment")
     if destination not in ("env", "github", "both"):
         raise ValueError("invalid save destination")
     if destination in ("github", "both"):
         if not isinstance(repo, str) or not REPO.fullmatch(repo):
             raise ValueError("explicit owner/repo is required for GitHub Secrets")
+        if environment is not None:
+            if not isinstance(environment, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,255}", environment):
+                raise ValueError("invalid GitHub environment")
         if any(f["name"].upper().startswith("GITHUB_") for f in fields):
             raise ValueError("GitHub Secrets disallows GITHUB_ prefix")
-    elif repo is not None:
+    elif repo is not None or environment is not None:
         raise ValueError("unexpected GitHub repository")
-    raw_root = args.get("project_dir")
-    if not isinstance(raw_root, str) or not raw_root or not Path(raw_root).is_absolute():
-        raise ValueError("project_dir must be an absolute path")
-    given = Path(raw_root)
-    if given.is_symlink() or not given.is_dir() or given.resolve() != given:
-        raise ValueError("project_dir must be an existing canonical directory, not a symlink")
-    root = given.resolve()
-    home = Path.home().resolve()
-    if root == home or home not in root.parents:
-        raise ValueError("project_dir must be an existing directory within the user's home")
+    root = trusted_project(args.get("project_dir"))
+    reason = plain_text(args.get("reason", ""), 240)
+    parts = env_file_parts(args.get("env_file", ".env"))
+    root_fd = open_trusted_root(root)
+    parent_fd = None
+    try:
+        parent_fd, _ = _walk_parent(root_fd, parts)
+    except OSError as error:
+        raise ValueError("dotenv parent must already exist and be safe") from error
+    finally:
+        if parent_fd is not None:
+            os.close(parent_fd)
+        os.close(root_fd)
+    env_target = root.joinpath(*parts)
     if destination in ("env", "both"):
-        target_file = root / ".env"
+        target_file = env_target
         if target_file.is_symlink() or (target_file.exists() and not target_file.is_file()):
-            raise ValueError("unsafe .env path")
+            raise ValueError("unsafe dotenv path")
     if destination == "env":
-        target = str(root / ".env")
+        target = "Local dotenv file: " + str(env_target)
     elif destination == "github":
-        target = "GitHub Actions Secrets: " + repo
+        target = "GitHub Actions Secrets: " + repo + (" (environment: " + environment + ")" if environment else "")
     else:
-        target = str(root / ".env") + " and GitHub Actions Secrets: " + repo
-    return fields, root, destination, repo, target
+        target = "Local dotenv file: " + str(env_target) + "; GitHub Actions Secrets: " + repo + (" (environment: " + environment + ")" if environment else "")
+    return fields, root, destination, repo, environment, "/".join(parts), reason, target
 
 
 def dialog_binary() -> Path:
@@ -163,14 +235,15 @@ def dialog_binary() -> Path:
     return executable
 
 
-def native_dialog(fields: list[dict[str, str]], target: str) -> dict[str, str]:
+def native_dialog(fields: list[dict[str, str]], target: str, reason: str, require_github_confirmation: bool) -> NativeResponse:
     if platform.system() != "Darwin":
         raise RuntimeError("native macOS dialog unavailable")
     executable = dialog_binary()
     try:
         proc = subprocess.run(
             [str(executable)],
-            input=json.dumps({"fields": fields, "destination": target}),
+            input=json.dumps({"fields": fields, "destination": target, "reason": reason,
+                              "requires_github_confirmation": require_github_confirmation}),
             capture_output=True, text=True, check=False, timeout=300,
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -182,13 +255,17 @@ def native_dialog(fields: list[dict[str, str]], target: str) -> dict[str, str]:
         if response.get("status") != "entered":
             raise Cancelled()
         values = response["values"]
+        destination_confirmed = response["destination_confirmed"]
+        github_confirmed = response["github_confirmed"]
         expected = {f["name"] for f in fields}
         # Empty fields are intentionally omitted; reject unexpected variable names.
         if not isinstance(values, dict) or not set(values).issubset(expected):
             raise Cancelled()
         if any(not isinstance(v, str) or not v for v in values.values()):
             raise Cancelled()
-        return values
+        if not isinstance(destination_confirmed, bool) or not isinstance(github_confirmed, bool):
+            raise Cancelled()
+        return NativeResponse(values, destination_confirmed, github_confirmed)
     except (ValueError, KeyError, TypeError):
         raise Cancelled() from None
 
@@ -198,15 +275,19 @@ def result(text: str, error: bool = False) -> dict:
 
 
 def request_secret(args: object) -> dict:
+    values: dict[str, str] | None = None
     try:
-        fields, root, destination, repo, target = validate(args)
+        fields, root, destination, repo, environment, env_file, reason, target = validate(args)
     except (ValueError, OSError):
         return result("Secret Drop: invalid or unsafe request. Nothing saved.", True)
     try:
-        values = native_dialog(fields, target)
+        response = native_dialog(fields, target, reason, destination in ("github", "both"))
     except (Cancelled, RuntimeError, OSError):
         return result("Secret Drop: cancelled or native dialog unavailable. Nothing saved.", True)
     try:
+        if not response.destination_confirmed or (destination in ("github", "both") and not response.github_confirmed):
+            return result("Secret Drop: destination was not confirmed. Nothing saved.", True)
+        values = response.values
         names_requested = [field["name"] for field in fields]
         if (not isinstance(values, dict)
                 or not set(values).issubset(names_requested)
@@ -230,8 +311,8 @@ def request_secret(args: object) -> dict:
         if destination in ("env", "both"):
             for value in values.values():
                 quote_env(value)
-            write_env_batch(root, values)
-            verified = verify_env_written(root, values)
+            write_env_batch(root, values, env_file)
+            verified = verify_env_written(root, values, env_file)
             unverified = [name for name in entered_names if not verified.get(name)]
             if unverified:
                 good = [name for name in entered_names if verified.get(name)]
@@ -246,7 +327,7 @@ def request_secret(args: object) -> dict:
 
         local_note = (
             "Saved and verified locally (exact value, file owner, mode 0600): " +
-            ", ".join(entered_names) + " to " + str(root / ".env") + ". "
+            ", ".join(entered_names) + " to " + str(root.joinpath(*env_file.split("/"))) + ". "
             if destination in ("env", "both") else ""
         )
 
@@ -259,7 +340,7 @@ def request_secret(args: object) -> dict:
         succeeded = []
         failed = []
         for name in entered_names:
-            if write_github(name, repo, values[name]):
+            if write_github(name, repo, environment, values[name]):
                 succeeded.append(name)
             else:
                 failed.append(name)
@@ -290,7 +371,7 @@ def handle(request: dict) -> dict | None:
         payload = {
             "protocolVersion": PROTOCOL,
             "capabilities": {"tools": {"listChanged": False}},
-            "serverInfo": {"name": "secret-drop-local", "version": "0.5.0"},
+            "serverInfo": {"name": "secret-drop-local", "version": "0.6.0"},
             "instructions": (
                 "Call request_secret with ONE 'name' or MULTIPLE 'secrets' entries; "
                 "a single native masked macOS window collects values. Never ask for, "

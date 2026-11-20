@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "secret-drop-codex",
-  "version": "0.5.0",
-  "description": "Compact native macOS masked multi-secret entry, exact post-write local verification, per-variable save/skip status, and heuristic prompt guard.",
+  "version": "0.6.0",
+  "description": "Compact native macOS masked multi-secret entry, confirmed local/GitHub targets, exact post-write local verification, per-variable save/skip status, and an optional heuristic prompt guard.",
   "author": {
     "name": "TKRV Engineering (adapted from Artem Islamov's Secret Drop)"
   },

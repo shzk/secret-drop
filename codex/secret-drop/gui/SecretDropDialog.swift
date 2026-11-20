@@ -12,6 +12,8 @@ struct InputField: Decodable {
 struct Prompt: Decodable {
     let fields: [InputField]
     let destination: String
+    let reason: String
+    let requires_github_confirmation: Bool
 }
 
 private final class FlippedView: NSView {
@@ -55,6 +57,15 @@ private final class VariableChip: NSView {
 }
 
 private final class DialogActions: NSObject, NSWindowDelegate {
+    weak var saveButton: NSButton?
+    weak var destinationConfirmation: NSButton?
+    weak var githubConfirmation: NSButton?
+
+    @objc func confirmationChanged(_ sender: NSButton) {
+        let destinationReady = destinationConfirmation?.state == .on
+        let githubReady = githubConfirmation == nil || githubConfirmation?.state == .on
+        saveButton?.isEnabled = destinationReady && githubReady
+    }
     @objc func save(_ sender: NSButton) {
         NSApp.stopModal(withCode: .OK)
     }
@@ -85,11 +96,23 @@ private func textLabel(_ value: String, font: NSFont, color: NSColor,
     return label
 }
 
+private func multiLabel(_ value: String, font: NSFont, color: NSColor,
+                        width: CGFloat) -> NSTextField {
+    let label = NSTextField(wrappingLabelWithString: value)
+    label.font = font
+    label.textColor = color
+    label.lineBreakMode = .byWordWrapping
+    label.maximumNumberOfLines = 0
+    let height = ceil(label.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: width, height: 10_000)).height ?? 16)
+    label.frame = NSRect(x: 16, y: 0, width: width, height: max(16, height))
+    return label
+}
+
 private func run() {
     guard let incoming = try? JSONDecoder().decode(
         Prompt.self, from: FileHandle.standardInput.readDataToEndOfFile()
     ), !incoming.fields.isEmpty, incoming.fields.count <= 12,
-       incoming.destination.count < 1024,
+       incoming.destination.count <= 4096, incoming.reason.count <= 240,
        incoming.fields.allSatisfy({ !$0.name.isEmpty && $0.name.count <= 128 }) else {
         writeResult(["status": "error"])
         return
@@ -98,11 +121,23 @@ private func run() {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
 
-    let width: CGFloat = 428
+    let width: CGFloat = 520
     let rowHeight: CGFloat = 36
     let rowsHeight = CGFloat(incoming.fields.count) * rowHeight
     let visibleRowsHeight = min(rowsHeight, CGFloat(288))
-    let windowHeight: CGFloat = 123 + visibleRowsHeight
+    let labelWidth = width - 32
+    let destinationLabel = multiLabel(
+        "Destination: " + incoming.destination, font: .systemFont(ofSize: 11),
+        color: .secondaryLabelColor, width: labelWidth
+    )
+    destinationLabel.toolTip = incoming.destination
+    let reasonLabel = incoming.reason.isEmpty ? nil : multiLabel(
+        "Reason: " + incoming.reason, font: .systemFont(ofSize: 11),
+        color: .secondaryLabelColor, width: labelWidth
+    )
+    let labelsHeight = destinationLabel.frame.height + (reasonLabel.map { $0.frame.height + 4 } ?? 0)
+    let confirmationHeight: CGFloat = incoming.requires_github_confirmation ? 48 : 25
+    let windowHeight: CGFloat = 108 + labelsHeight + visibleRowsHeight + confirmationHeight
 
     let window = NSWindow(
         contentRect: NSRect(x: 0, y: 0, width: width, height: windowHeight),
@@ -122,16 +157,15 @@ private func run() {
         font: .systemFont(ofSize: 14, weight: .semibold),
         color: .labelColor, frame: NSRect(x: 16, y: 12, width: width - 32, height: 21)
     ))
-    let dest = textLabel(
-        "Save to: " + incoming.destination,
-        font: .systemFont(ofSize: 11), color: .secondaryLabelColor,
-        frame: NSRect(x: 16, y: 35, width: width - 32, height: 16)
-    )
-    dest.toolTip = incoming.destination
-    panel.addSubview(dest)
+    destinationLabel.frame.origin.y = 35
+    panel.addSubview(destinationLabel)
+    if let reasonLabel {
+        reasonLabel.frame.origin.y = destinationLabel.frame.maxY + 4
+        panel.addSubview(reasonLabel)
+    }
 
     let scroll = NSScrollView(frame: NSRect(
-        x: 16, y: 59, width: width - 32, height: visibleRowsHeight
+        x: 16, y: 43 + labelsHeight, width: width - 32, height: visibleRowsHeight
     ))
     scroll.hasVerticalScroller = rowsHeight > visibleRowsHeight
     scroll.drawsBackground = false
@@ -171,14 +205,33 @@ private func run() {
         secureFields.append(field)
     }
 
+    let footerY = 49 + labelsHeight + visibleRowsHeight
     panel.addSubview(textLabel(
         "Blank fields are skipped. Values stay outside Codex.",
         font: .systemFont(ofSize: 11), color: .secondaryLabelColor,
-        frame: NSRect(x: 16, y: 65 + visibleRowsHeight,
+        frame: NSRect(x: 16, y: footerY,
                       width: width - 32, height: 16)
     ))
 
-    let buttonY = 85 + visibleRowsHeight
+    let destinationCheck = NSButton(
+        checkboxWithTitle: "I confirm the exact destination above.", target: actions,
+        action: #selector(DialogActions.confirmationChanged(_:))
+    )
+    destinationCheck.frame = NSRect(x: 16, y: footerY + 20, width: width - 32, height: 18)
+    panel.addSubview(destinationCheck)
+
+    var githubCheck: NSButton?
+    if incoming.requires_github_confirmation {
+        let check = NSButton(
+            checkboxWithTitle: "I approve the external GitHub Secrets write shown above.", target: actions,
+            action: #selector(DialogActions.confirmationChanged(_:))
+        )
+        check.frame = NSRect(x: 16, y: footerY + 40, width: width - 32, height: 18)
+        panel.addSubview(check)
+        githubCheck = check
+    }
+
+    let buttonY = footerY + confirmationHeight
     let cancel = NSButton(title: "Cancel", target: actions, action: #selector(DialogActions.cancel(_:)))
     cancel.frame = NSRect(x: width - 198, y: buttonY, width: 84, height: 28)
     cancel.keyEquivalent = "\u{1b}"
@@ -187,7 +240,11 @@ private func run() {
     let save = NSButton(title: "Save", target: actions, action: #selector(DialogActions.save(_:)))
     save.frame = NSRect(x: width - 105, y: buttonY, width: 88, height: 28)
     save.keyEquivalent = "\r"
+    save.isEnabled = false
     panel.addSubview(save)
+    actions.saveButton = save
+    actions.destinationConfirmation = destinationCheck
+    actions.githubConfirmation = githubCheck
 
     app.activate(ignoringOtherApps: true)
     window.makeKeyAndOrderFront(nil)
@@ -209,7 +266,11 @@ private func run() {
             values[entry.name] = value
         }
     }
-    writeResult(["status": "entered", "values": values])
+    writeResult([
+        "status": "entered", "values": values,
+        "destination_confirmed": destinationCheck.state == .on,
+        "github_confirmed": githubCheck == nil || githubCheck?.state == .on,
+    ])
 }
 
 run()
