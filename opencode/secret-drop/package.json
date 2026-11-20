@@ -1,0 +1,14 @@
+{
+  "name": "tkrv-secret-drop-opencode",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.js"
+  },
+  "license": "MIT",
+  "description": "OpenCode v2 pre-admission secret prompt replacement",
+  "dependencies": {
+    "@opencode/plugin": "*"
+  }
+}
