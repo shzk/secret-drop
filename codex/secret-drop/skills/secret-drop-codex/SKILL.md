@@ -1,16 +1,14 @@
 ---
 name: secret-drop-codex
-description: Use when Codex needs a credential, token, password, or GitHub Actions secret from the user without receiving its value in conversation or tool arguments.
+description: Use when a person needs to provide one or multiple API keys, passwords or tokens to Codex safely through a native masked macOS input dialog.
 ---
 
 # Secret Drop for Codex
 
-**Primary route: call the bundled `secret-drop-local.request_secret` MCP tool**. Pass the variable `name` and exact existing absolute `project_dir`; `destination` is `env` by default. The tool opens a native macOS dialog with a **masked input field** labeled with the variable name and destination, asks the user to enter the secret, writes locally, and returns **only save status**. The user need not run anything in Terminal. Never request the key's value in chat, shell command arguments, tool arguments, or agent messages.
+**Call `secret-drop-local.request_secret`**, never ask the human to paste or type a secret into chat or shell. Use `name` for one variable (legacy support) or **`secrets: [{name: "OPENAI_API_KEY"}, {name: "SERVICE_TOKEN"}]`** to collect multiple variables in **one native macOS window**. Optional `hint` is a short non-secret description. Always pass the exact existing canonical absolute `project_dir` for the intended project, not a guessed path. The window displays variable names in highlighted monospaced labels, uses one hidden field per variable, and presents the destination. The user enters secrets and clicks Save; the model receives **only variable names, destination and save status**.
 
-Example call arguments (NO secret values): `{"name":"OPENAI_API_KEY","project_dir":"/Users/<local-user>/project","destination":"env"}`. Resolve `project_dir` from the actual active working directory; never guess or pick a different project. To save GitHub Actions Secrets, explicitly use `destination: "github"` or `"both"` with a known `github_repo`. The macOS modal shows the target; the human must click Save. Do not invoke the old terminal helper.
+Default `destination: "env"` atomically saves all values into the local project's `.env` with mode `0600`; opt-in `destination: "github"` or `"both"` requires known `github_repo` and explicit permission. A GitHub failure may partially save values, so report the returned status accurately. Never inspect, print, cat, or reproduce any saved secret. Do not use the old manual terminal helper.
 
-If the MCP tool is absent, report that the local plugin or MCP connection is not loaded; **do not substitute a chat prompt for the secret or tell the human to type the secret into an agent terminal**. On non-macOS hosts, the native UI is unavailable.
+**Supported UI boundary:** Codex Desktop currently does not provide a verified public API to mount a third-party secret field inside or above its native composer. The plugin shows a **separate native macOS AppKit dialog**, not the original Claude embedded band. Never manipulate Codex's accessibility/window hierarchy to imitate unsupported UI.
 
-A separate `UserPromptSubmit` pattern guard can block some recognizable credentials accidentally pasted into a Codex prompt, **only after the user trusts/enables it** via `/hooks`. The guard is heuristic and not complete DLP.
-
-**Security boundary:** Codex/other agents with filesystem access can potentially read `.env`. Respect OS permissions and project-scoped tool approvals; never inspect the value for verification. Use fake credentials in tests. ChatGPT Web cannot show this local macOS modal without a connected local runtime.
+The `UserPromptSubmit` guard heuristically blocks some accidental pastes **after user hook trust**; it is not comprehensive DLP. On a missing MCP tool or a headless/non-macOS host, report that native masked entry is unavailable. Never fall back to asking for a real key via chat. Real keys require restricted project filesystem permissions since an agent with read access might still inspect `.env`.
