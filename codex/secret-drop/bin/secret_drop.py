@@ -100,4 +100,3 @@ def write_github(name: str, repo: str, value: str) -> bool:
         return p.returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
-
