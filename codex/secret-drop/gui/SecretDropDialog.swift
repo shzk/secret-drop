@@ -61,9 +61,15 @@ private func run() {
     for (index, entry) in incoming.fields.enumerated() {
         let y = CGFloat(index) * rowHeight + 6
         let name = NSTextField(labelWithString: entry.name)
-        name.frame = NSRect(x: 8, y: y, width: width - 50, height: 20)
-        name.font = NSFont.monospacedSystemFont(ofSize: 14, weight: .semibold)
-        name.textColor = .labelColor
+        let codeFont = NSFont.monospacedSystemFont(ofSize: 14, weight: .semibold)
+        let codeWidth = (entry.name as NSString).size(withAttributes: [.font: codeFont]).width
+        name.frame = NSRect(x: 8, y: y, width: min(codeWidth + 20, width - 50), height: 21)
+        name.font = codeFont
+        name.textColor = .controlAccentColor
+        name.drawsBackground = true
+        name.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.10)
+        name.wantsLayer = true
+        name.layer?.cornerRadius = 5
         name.lineBreakMode = .byTruncatingMiddle
         name.toolTip = entry.name
         doc.addSubview(name)
