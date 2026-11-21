@@ -45,7 +45,7 @@ class SyntheticSafeHandoff(unittest.TestCase):
         confirm = form_approve()
         self.assertNotIn(PUBLIC_FAKE_VALUE, json.dumps(confirm))
         with tempfile.TemporaryDirectory() as td:
-            home = Path(td) / "home"
+            home = Path(td).resolve() / "home"
             root = home / "project"
             root.mkdir(parents=True, mode=0o700)
             home.chmod(0o700)
