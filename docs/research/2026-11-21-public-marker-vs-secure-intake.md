@@ -1,8 +1,8 @@
 # Secret Drop — проверка «ввода секрета» через MCP Form и безопасного двухэтапного сценария
 
-**Дата:** 21.11.2026. **Тип:** исследовательский тест, не изменение релиза.  
-**Исходник:** [shzk/secret-drop](https://github.com/shzk/secret-drop), `research/mcp-elicitation-20261121`.  
-**План:** [2026-11-21-form-value-visibility.md](../plans/2026-11-21-form-value-visibility.md), **задача:** TickTick `6b01c4f28f08fe236af3e5e5`.  
+**Дата:** 21.11.2026. **Тип:** исследовательский тест, не изменение релиза.
+**Исходник:** [shzk/secret-drop](https://github.com/shzk/secret-drop), `research/mcp-elicitation-20261121`.
+**План:** [2026-11-21-form-value-visibility.md](../plans/2026-11-21-form-value-visibility.md), **задача:** TickTick `6b01c4f28f08fe236af3e5e5`.
 **Базовый релиз:** Secret Drop Codex `0.6.0`, принят ранее и не изменён.
 
 ## Результат по существу
