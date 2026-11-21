@@ -20,7 +20,7 @@
 - Final CLI readback from the **ordinary** `secret-drop` project (not the research worktree): `secret_drop_form_probe` is now **enabled and visible globally**. Accepted `secret-drop-codex@secret-drop-tkrv` remains installed/enabled v0.6.0.
 - A private `after.sha256` was recorded to permit an exact rollback if config bytes are unchanged. If the user or another agent edits Codex settings before cleanup, do **not** overwrite their newer changes from the old backup; remove only the test entry and reconcile remaining settings.
 
-## Open Codex Desktop UI gate — DO NOT claim PASS yet
+## Codex Desktop embedded Form Elicitation — OWNER-OBSERVED PASS
 
 Codex official documentation provides an MCP add/manage UI: Settings → MCP servers → Add server, or Settings → Plugins → MCPs → Add → Add MCP server depending on client build. **Do not create a duplicate**: the test entry has already been added through the supported CLI and uses the same shared configuration. Inspect it in UI and start a **new** Codex Desktop chat:
 
@@ -31,10 +31,12 @@ saved key, enter credentials or write a file. If a native confirmation form appe
 select config/.env.local and confirm, then report the tool status.
 ```
 
-Only an actual Desktop event/screenshot or exact error settles this host UI gate. Previous app-server form routing PASS is preserved, but is not a Desktop UI PASS.
+**Owner-observed actual Codex Desktop result (2026-11-21, screenshot in the original chat):** In a new Codex conversation, the first request still displayed `MCP_NOT_VISIBLE`, but a second request exposed `secret_drop_form_probe.probe_confirmation`. Codex displayed an **inline form in the conversation** with `Confirm destination`, the fake destination options `config/.env.local` / `Do not save` and visible **Decline / Accept** controls. The owner accepted the selected fake target and reported Codex's result: the tool was called once with `{}`, returned confirmation of `config/.env.local`, requested no keys and wrote no files. This establishes **Codex Desktop UI E2E PASS for non-secret MCP Form Elicitation**, not proof of a secure credential-value intake form.
 
-## Mandatory rollback — OPEN while user performs one UI check
+**Discovery boundary:** project-local registration alone yielded repeated `MCP_NOT_VISIBLE`; temporary global registration enabled subsequent discovery **within the same Desktop conversation**, without changing the accepted Secret Drop plugin. The first global-scope attempt still returning `MCP_NOT_VISIBLE` prevents attributing the outcome to a single definite trigger or guaranteeing instantaneous discovery. In particular, do not claim that simply registering any project MCP will always make it available to Codex Desktop.
 
-After the one user-side Desktop test, remove **only `secret_drop_form_probe`** from user-global Codex MCP; verify that the other servers still work and that other user config values match their pretest baseline. A complete restore of `config.toml` bytes from backup is safe **only when its live SHA matches the recorded post-add SHA**; otherwise preserve intervening user changes and remove just the probe. Delete private duplicate backup after successful rollback with an explicit, exact rollback readback.
+## Mandatory rollback — COMPLETED and independently read back
 
-**Important:** The temporary global test is presently ACTIVE and therefore visible to all local Codex sessions until rollback. It never requests a value and never writes a file or calls a remote endpoint. No new GitHub PR, no modification of accepted `main` or installed Secret Drop v0.6.0.
+After the owner confirmed the Desktop form, the current global `~/.codex/config.toml` SHA-256 **exactly matched the recorded post-add fingerprint**, and parsing it without the temporary `secret_drop_form_probe` record produced the identical pretest TOML mapping. Therefore the original byte-identical `config.toml` was restored atomically from the private backup and mode `0600` re-established. **Readback: restored configuration SHA-256 `e0b1588437088c2edf67d6524489ddbe1436ccfc1c3ef0700e77969fc3fe9ea1`; backup bytes identical; no global test probe; `computer-use`, `node_repl`, `playwright`, `secret-drop-local` all still enabled; installed Secret Drop plugin `0.6.0` unchanged.** The deleted `node_repl.args` side-effect caused earlier by the Codex CLI was also fully restored with the original byte-identical config. After final check, the private duplicate backup directory and its temporary fingerprint files were deleted successfully. No backup or secrets were committed to Git.
+
+**Final status:** the temporary global test is **NOT active**. The research-only stdio probe source remains in the isolated research branch; no public MCP server, model-visible key, new GitHub PR or accepted `main` change was introduced. Any future product integration requires its own design/security acceptance and must keep credential values outside MCP Form Elicitation.
