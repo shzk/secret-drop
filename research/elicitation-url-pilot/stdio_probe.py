@@ -96,8 +96,9 @@ class Probe:
         params = msg.get("params") or {}
         if method == "initialize":
             capabilities = params.get("capabilities", {}).get("elicitation", {})
-            version = params.get("protocolVersion")
-            self.supported = version == PROTOCOL and isinstance(capabilities.get("url"), dict)
+            # The client proposes a version. The server selects PROTOCOL below,
+            # so use the advertised mode once the client continues to tools/call.
+            self.supported = isinstance(capabilities.get("url"), dict)
             return result(request_id, {
                 "protocolVersion": PROTOCOL,
                 "serverInfo": {"name": "secret-drop-url-fixture", "version": "0.1.0"},

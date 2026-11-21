@@ -9,7 +9,10 @@ import { createInterface } from "node:readline";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-async function startProbe(t, capabilities = { elicitation: { url: {} } }) {
+async function startProbe(t, {
+  capabilities = { elicitation: { url: {} } },
+  protocolVersion = "2025-11-25",
+} = {}) {
   const temp = await mkdtemp(path.join(tmpdir(), "url-pilot-test-"));
   const fixture = fileURLToPath(new URL("stdio_probe.py", import.meta.url));
   const proc = spawn("python3", ["-I", fixture], {
@@ -32,7 +35,7 @@ async function startProbe(t, capabilities = { elicitation: { url: {} } }) {
   }
 
   const init = await rpc({ id: 1, method: "initialize", params: {
-    protocolVersion: "2025-11-25", capabilities,
+    protocolVersion, capabilities,
   } });
   assert.equal(init.result.protocolVersion, "2025-11-25");
   const [directory] = await readdir(temp);
@@ -106,9 +109,17 @@ test("cancel closes the write gate", { timeout: 5000 }, async (t) => {
 });
 
 test("form-only capability cannot trigger URL mode", { timeout: 5000 }, async (t) => {
-  const { call, target } = await startProbe(t, { elicitation: { form: {} } });
+  const { call, target } = await startProbe(t, { capabilities: { elicitation: { form: {} } } });
   const reply = await call(2, "probe_url");
   assert.equal(reply.result.isError, true);
   assert.equal(state(reply), "url_not_advertised");
   await assert.rejects(readFile(target), { code: "ENOENT" });
+});
+
+test("an older initial version does not override advertised URL capability", { timeout: 5000 }, async (t) => {
+  const { rpc, call } = await startProbe(t, { protocolVersion: "2025-06-18" });
+  const ask = await call(2, "probe_url");
+  assert.equal(ask.params.mode, "url");
+  const reply = await rpc({ id: ask.id, result: { action: "cancel" } });
+  assert.equal(state(reply), "cancelled");
 });
