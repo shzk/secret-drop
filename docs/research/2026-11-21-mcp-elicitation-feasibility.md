@@ -1,9 +1,9 @@
 # Исследование: встроенные запросы пользователя и защищённый ввод Secret Drop
 
-**Дата:** 21.11.2026  
-**Состояние:** эксперимент, **не принят в релиз**  
-**Владелец:** [shzk/secret-drop](https://github.com/shzk/secret-drop), ветка `research/mcp-elicitation-20261121`  
-**Задача:** TickTick `6b01a4b48f0887ff0a4c82e8`  
+**Дата:** 21.11.2026
+**Состояние:** эксперимент, **не принят в релиз**
+**Владелец:** [shzk/secret-drop](https://github.com/shzk/secret-drop), ветка `research/mcp-elicitation-20261121`
+**Задача:** TickTick `6b01a4b48f0887ff0a4c82e8`
 **База:** `main@ad14933b7cdc94a6bd574bfbf476a1a03226f32c`, принятый Secret Drop Codex `0.6.0` не изменён.
 
 ## 1. Вопрос и проверяемое поведение
