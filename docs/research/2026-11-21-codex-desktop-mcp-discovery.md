@@ -17,7 +17,7 @@ This is **not** a negative test of MCP Elicitation itself: the host never admitt
 3. Initial `codex mcp get` showed `cwd=null` and `command=python3`. As a bounded targeted compatibility check, updated only that ignored project-local config to `command="/opt/homebrew/bin/python3"` and `cwd="/Users/shzk/Developer/Codex/secret-drop-elicitation-research"`. Readback confirms the exact effective command and cwd, enabled=true, while the source worktree remains clean.
 4. Running the **test stdio tool itself** via the explicit absolute Python path produced `initialize` / `tools/list` response with `probe_confirmation`, exit 0 and empty stderr.
 5. The separate earlier isolated Codex **app-server** simulation with process-scoped MCP overrides successfully emitted `mcpServer/elicitation/request` and received a dummy form response, exit 0. This proves the transport route, not the Desktop's project-config loader.
-6. A new **Codex Desktop** chat after this local config correction **has not yet been observed**. Therefore whether the absolute cwd fixes actual Desktop admission is still unknown.
+6. **OWNER RETEST RESULT — 2026-11-21:** after the explicit Python command and project `cwd` correction, the owner restarted/opened the research project in a new Codex Desktop chat and received **`MCP_NOT_VISIBLE`** again. The test MCP tool was absent; no Form was opened, no tool was called and no value was entered. This is the **second bounded Desktop discovery failure**, so further project-local configuration variations are stopped.
 
 ## Relevant public issue evidence, not a verified root-cause attribution
 
@@ -28,12 +28,12 @@ This is **not** a negative test of MCP Elicitation itself: the host never admitt
 
 These are GitHub issue reports from other environments. Do not claim our exact issue has been fixed or that those reports establish a definitive cause.
 
-## Nearest single user-side acceptance gate
+## Decision after second Desktop failure — BLOCKED
 
-Open the **research** worktree in Codex Desktop, fully restart Codex only when doing so does not disrupt other active threads, then create a **new chat** in that project. Ask whether `secret_drop_form_probe.probe_confirmation` is exposed; if present, invoke it using **only non-secret form metadata**. A screenshot of the rendered form or the exact tool-discovery error is sufficient. No real API key may be entered.
+**STOP** project-scoped configuration attempts and repeated user UI tests. Codex Desktop did not expose the research tool even after project trust, explicit Python executable, explicit cwd, and a fresh Desktop attempt. The root cause within the Desktop client has **not** been proven. The existing app-server protocol E2E remains PASS; Desktop Form UI E2E remains **NOT TESTED** because tool discovery fails first.
 
-If the tool is still absent, **STOP further project-config tweaks**: the likely boundary is Desktop project MCP admission. A **temporary user-global MCP configuration** is a possible documented workaround, but would affect other Codex sessions and require separately approved scope plus safe backup/rollback. Do not apply it silently. No private UI API, forced app restart or global plugin reinstall should be used without approval.
+**Optional next route — requires separate explicit user approval:** temporarily register *only the non-secret test probe* under user-global `~/.codex/config.toml`, after backing up the exact file; verify readback, run one new Desktop chat, then restore prior configuration and verify clean rollback. A global entry may affect other Codex sessions, so do not apply it under the existing research authorization. No real key may be entered, no current Secret Drop plugin may be modified. If the user does not approve the global experiment, leave the research branch and ticket BLOCKED without extra testing.
 
 ## Outcome boundary
 
-**Existing probe:** stdio PASS, Codex app-server routing PASS, **Codex Desktop tool discovery FAIL observed**. **After cwd correction:** source and CLI PASS, Desktop retest OPEN. No accepted Secret Drop source, marketplace or `main` files changed. No real credentials, public endpoint, network listener, GitHub write or metered API spend.
+**Existing probe:** stdio PASS, Codex app-server routing PASS, **Codex Desktop tool discovery FAIL x2 (including after cwd correction)**. Local source and CLI checks PASS; actual Desktop inline Form UI remains **UNVERIFIED**. Follow-up requires an explicitly approved reversible global-config test, not further project-local retries. No accepted Secret Drop source, marketplace or `main` files changed. No real credentials, public endpoint, network listener, GitHub write or metered API spend.
