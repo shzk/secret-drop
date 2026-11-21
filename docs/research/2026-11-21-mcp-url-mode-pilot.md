@@ -47,3 +47,11 @@ args = ["-I", "/absolute/path/to/checkout/research/elicitation-url-pilot/stdio_p
 ```
 
 В новом чате вызвать только `secret_drop_url.probe_url` с `{}`. Дальше проверить переход и статусы по процедуре выше. [Настройка MCP для проекта](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
+
+## Codex Desktop и политика подтверждений
+
+Первый ручной прогон в Codex Desktop Local закончился статусом `cancelled` без показа карточки и без действия пользователя. Открытие браузера и запись в Desktop не подтверждены.
+
+Контрольный тест на том же Mac (Codex CLI / app-server `0.163.0`, исправленный стенд, `sandbox=read-only`) изменял только политику подтверждений. С `never` реальный app-server не отправил `mcpServer/elicitation/request`, а инструмент вернул `cancelled`. С `on-request` app-server отправил запрос `mode=url`; тестовый клиент явно отменил его и получил тот же итоговый статус. Стенд отображает `decline` и `cancel` одним статусом, поэтому для диагноза нужно смотреть, был ли запрос передан клиенту.
+
+Исходники Codex подтверждают автоматический отказ при `never` и исключение только для некоторых Form-запросов. Фактический режим исходной сессии Desktop неизвестен. Следующая адресная проверка Desktop — новый Local-чат в тестовой папке с режимом **Ask for approval**, затем `probe_url`. [Код Codex 0.163.0](https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/codex-mcp/src/elicitation.rs) · [Issue #45776](https://github.com/openai/codex/issues/45776) · [Режимы Codex](https://learn.chatgpt.com/docs/sandboxing).
