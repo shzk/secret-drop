@@ -122,8 +122,8 @@ def run() -> int:
                     "id": 4, "method": "mcpServer/tool/call",
                     "params": {
                         "threadId": thread_id,
-                        "serverName": SERVER,
-                        "toolName": "probe_confirmation",
+                        "server": SERVER,
+                        "tool": "probe_confirmation",
                         "arguments": {},
                     },
                 })
