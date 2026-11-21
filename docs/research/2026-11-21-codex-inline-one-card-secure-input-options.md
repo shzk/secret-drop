@@ -91,8 +91,19 @@ Agent asks: TEST_SECRET_ALPHA + nonsecret proposed destination
 | **H. Codex `credential_masking` broker** | No | Intended to protect downstream network usage of existing env credentials | Under development/off; **complementary** to secret intake, not replacement |
 | **I. CLI custom statusline** | Footer only, no password entry | Not relevant | **REJECT for Desktop UX** |
 | **J. Accessibility overlay, plugin UI injection, patched Desktop binary** | Visually imitate | Unstable; worsens host trust/audit | **REJECT**, violates accepted maintainability/security boundaries |
+| **K. Provider-issued encrypted NEW key (OpenAI Developers)** | No key-entry field needed | **Yes**: provider encrypts key to a fresh local public JWK; helper decrypts/writes to confirmed local file | **SOURCE-VERIFIED TODAY for OpenAI**, connector/install/account E2E not tested here; does not accept existing arbitrary keys |
 
 **MCP Apps app-provided tools:** [issue #55167](https://github.com/openai/codex/issues/55167) reports a working iframe but app-provided tools not discoverable by the model. That is not a blocker for a fully direct browser-to-local value submission (which must **not** become a model tool call), but it reinforces that host support is incomplete/version-specific.
+
+### Another practical option already implemented upstream: encrypted issuance of **new** provider keys
+
+The [official OpenAI Developers plugin](https://developers.openai.com/learn/developers-codex-plugin) exposes [`openai-platform-api-key`](https://github.com/openai/plugins/blob/main/plugins/openai-developers/skills/openai-platform-api-key/SKILL.md). Its [Node helper](https://github.com/openai/plugins/blob/main/plugins/openai-developers/scripts/openai-platform-api-key.mjs) generates a temporary **RSA-OAEP** keypair and public JWK; the authorized OpenAI Platform connector receives the public JWK and returns an **encrypted newly issued API key**; local `decrypt` writes the plaintext to a confirmed project file and prints only metadata. This avoids a human manually copying the key into **either** Codex composer or a masked UI.
+
+**Use case fit:** new OpenAI API keys, with separately approved OpenAI Platform authentication/connector and user confirmation. It is **not a general channel for already-issued arbitrary third-party keys** unless that provider offers an audited issuance/encryption protocol; it does not solve dynamic existing-key intake for Telegram/AWS/etc. It is also not the original Claude Mod's UI mechanism.
+
+**Actual Mac state:** `codex plugin list` shows `openai-developers@openai-curated-remote` version `1.3.16` **not installed** on the tested Mac. We did not install, authenticate, generate or validate any real key. The public upstream code proves the workflow exists, **not** that it has passed E2E for this account.
+
+**Actionability:** If a future explicit task is to create a *new OpenAI key*, prefer evaluating this existing official flow over building a new credential provisioning subsystem in our Secret Drop. Keep the accepted Secret Drop for entering already-issued keys. See also the independent branch note [credential intake follow-up](2026-11-21-codex-secret-intake-followup.md) for other status observations not revalidated in this Mac session.
 
 ### A second possible product gain: credential use, not collection
 
