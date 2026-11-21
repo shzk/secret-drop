@@ -90,7 +90,7 @@ def run() -> int:
                     "id": 2, "method": "thread/start",
                     "params": {
                         "cwd": str(ROOT),
-                        "approvalPolicy": "never",
+                        "approvalPolicy": "on-request",
                         "sandbox": "read-only",
                         "ephemeral": True,
                     },
