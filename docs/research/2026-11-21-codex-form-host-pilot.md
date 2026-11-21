@@ -52,6 +52,13 @@ EXIT=0
 3. Observe whether the form is embedded in the conversation, separate, cancelled, or not shown; send screenshot/response with **no real secrets**. If no form appears, check the project trust and the stated `approval_policy`; do **not** grant extra permissions or use Accessibility/private APIs.
 4. After visual evidence, record `Desktop inline FORM PASS` or exact mismatch, then decide whether to propose a separate implementation PR for **non-secret** confirmation. Never merge this research pilot into the accepted plugin without a separately reviewed design and explicit owner approval.
 
+
+## Desktop admission follow-up (2026-11-21)
+
+The owner attempted the tool from Codex Desktop and received **tool not available**; no form opened. The project is already trusted and the probe is present in project-scoped CLI MCP discovery, while the Desktop thread omitted it. The isolated local config was corrected to explicit absolute Python executable and project `cwd`; CLI and direct stdio probe readbacks passed, but **a new Desktop retest has not yet occurred**. This is an **OPEN host-discovery gate**, not evidence that Elicitation itself failed.
+
+[Detailed diagnostics and single retest procedure](2026-11-21-codex-desktop-mcp-discovery.md). No changes to accepted Secret Drop 0.6.0, user-global Codex config, or production. If project-scoped admission remains absent after new chat, stop and request separate permission before any temporary global-config workaround.
+
 ## Official documentation
 
 - [MCP Form/URL Elicitation 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation)
