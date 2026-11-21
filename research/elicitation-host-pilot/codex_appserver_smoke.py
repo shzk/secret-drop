@@ -16,6 +16,8 @@ import subprocess
 import sys
 import time
 
+from stdio_probe import DEMO_MARKER, DEMO_TOOL_NAME
+
 ROOT = Path(__file__).resolve().parents[2]
 PROBE = Path(__file__).resolve().with_name("stdio_probe.py")
 SERVER = "secret_drop_form_probe"
@@ -27,6 +29,7 @@ def send(proc, obj):
 
 
 def run() -> int:
+    public_demo = '--public-demo' in sys.argv
     if not PROBE.is_file():
         print("PILOT_ERROR=probe_source_not_found")
         return 2
@@ -48,6 +51,7 @@ def run() -> int:
     pending_call = False
     elicitation_seen = False
     tool_result_seen = False
+    demo_marker_visible = False
     init_ack = False
     try:
         send(proc, {
@@ -123,7 +127,7 @@ def run() -> int:
                     "params": {
                         "threadId": thread_id,
                         "server": SERVER,
-                        "tool": "probe_confirmation",
+                        "tool": DEMO_TOOL_NAME if public_demo else "probe_confirmation",
                         "arguments": {},
                     },
                 })
@@ -143,10 +147,10 @@ def run() -> int:
                         "id": msg["id"],
                         "result": {
                             "action": "accept",
-                            "content": {
+                            "content": ({"demo_text": DEMO_MARKER} if public_demo else {
                                 "destination": "config/.env.local",
                                 "confirm": True,
-                            },
+                            }),
                         },
                     })
             elif msg.get("id") == 4:
@@ -155,6 +159,7 @@ def run() -> int:
                 else:
                     result = json.dumps(msg.get("result", {}))
                     print("TOOL_CALL_RESULT=" + result[:500])
+                    demo_marker_visible = DEMO_MARKER in result
                     tool_result_seen = True
                 break
             elif "error" in msg and msg.get("id") is not None:
@@ -163,7 +168,9 @@ def run() -> int:
         print("CALL_STARTED=" + str(pending_call))
         print("FORM_ROUTED=" + str(elicitation_seen))
         print("CALL_RETURNED=" + str(tool_result_seen))
-        return 0 if elicitation_seen and tool_result_seen else 1
+        if public_demo:
+            print("PUBLIC_DEMO_MARKER_IN_TOOL_RESULT=" + str(demo_marker_visible))
+        return 0 if elicitation_seen and tool_result_seen and (not public_demo or demo_marker_visible) else 1
     finally:
         try:
             proc.stdin.close()
