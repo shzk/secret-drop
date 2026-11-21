@@ -142,10 +142,13 @@ class Probe:
             with self.lock:
                 answer = msg.get("result") or {}
                 action = answer.get("action")
-                if action == "accept" and answer.get("content") is None:
+                # Codex can normalize absent URL response content to {}.
+                if action == "accept" and answer.get("content") in (None, {}):
                     self.state = "awaiting_browser"
-                elif action in ("cancel", "decline"):
+                elif action == "cancel":
                     self.state = "cancelled"
+                elif action == "decline":
+                    self.state = "declined"
                 else:
                     self.state = "invalid_response"
                 response = tool_result(self.pending, self.state)

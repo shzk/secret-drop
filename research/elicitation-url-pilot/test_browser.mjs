@@ -123,3 +123,20 @@ test("an older initial version does not override advertised URL capability", { t
   const reply = await rpc({ id: ask.id, result: { action: "cancel" } });
   assert.equal(state(reply), "cancelled");
 });
+
+test("Codex-style empty URL response is accepted without writing", { timeout: 5000 }, async (t) => {
+  const { rpc, target, call } = await startProbe(t);
+  const ask = await call(2, "probe_url");
+  const reply = await rpc({ id: ask.id, result: { action: "accept", content: {} } });
+  assert.equal(state(reply), "awaiting_browser");
+  await assert.rejects(readFile(target), { code: "ENOENT" });
+});
+
+test("a refusal is distinguishable from cancellation", { timeout: 5000 }, async (t) => {
+  const { rpc, target, call } = await startProbe(t);
+  const ask = await call(2, "probe_url");
+  const reply = await rpc({ id: ask.id, result: { action: "decline" } });
+  assert.equal(state(reply), "declined");
+  assert.equal((await postMarker(ask.params.url)).status, 409);
+  await assert.rejects(readFile(target), { code: "ENOENT" });
+});
