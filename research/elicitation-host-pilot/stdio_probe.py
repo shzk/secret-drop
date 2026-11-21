@@ -12,6 +12,29 @@ from typing import Any
 
 MCP_VERSION = "2025-11-25"
 TOOL_NAME = "probe_confirmation"
+DEMO_TOOL_NAME = "probe_demo_value_visibility"
+DEMO_MARKER = "PUBLIC_SYNTHETIC_DEMO_123"  # Public demo text, not a credential.
+DEMO_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "demo_text": {
+            "type": "string",
+            "title": "Public demonstration text (never enter a secret)",
+            "enum": [DEMO_MARKER],
+        },
+    },
+    "required": ["demo_text"],
+    "additionalProperties": False,
+}
+DEMO_TOOL = {
+    "name": DEMO_TOOL_NAME,
+    "description": (
+        "RESEARCH ONLY: demonstrate that a NON-SECRET public marker entered "
+        "into an MCP Form is visible in MCP tool results. Never enter any real "
+        "API key, token, password or credential. This tool writes nothing."
+    ),
+    "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+}
 SCHEMA = {
     "type": "object",
     "properties": {
@@ -95,12 +118,12 @@ class Probe:
                 ),
             })]
         if method == "tools/list" and msg_id is not None:
-            return [jsonrpc_result(msg_id, {"tools": [TOOL]})]
+            return [jsonrpc_result(msg_id, {"tools": [TOOL, DEMO_TOOL]})]
         if method == "ping" and msg_id is not None:
             return [jsonrpc_result(msg_id, {})]
         if method == "tools/call" and msg_id is not None:
             params = msg.get("params") or {}
-            if not isinstance(params, dict) or params.get("name") != TOOL_NAME:
+            if not isinstance(params, dict) or params.get("name") not in (TOOL_NAME, DEMO_TOOL_NAME):
                 return [jsonrpc_result(msg_id, self._status("unsupported tool", error=True))]
             args = params.get("arguments", {})
             if args not in ({}, None):
@@ -114,7 +137,9 @@ class Probe:
                 ))]
             pending_id = "elicitation-" + str(self.next_request_id)
             self.next_request_id += 1
-            self.pending = {"request_id": pending_id, "tool_call_id": msg_id}
+            self.pending = {"request_id": pending_id, "tool_call_id": msg_id,
+                            "mode": "demo" if params.get("name") == DEMO_TOOL_NAME else "confirm"}
+            is_demo = self.pending["mode"] == "demo"
             return [{
                 "jsonrpc": "2.0",
                 "id": pending_id,
@@ -122,24 +147,28 @@ class Probe:
                 "params": {
                     "mode": "form",
                     "message": (
+                        "Research pilot: choose a PUBLIC, NON-SECRET DEMO marker. "
+                        "Never enter a real API key, token or password."
+                        if is_demo else
                         "Secret Drop pilot: confirm a FAKE destination only. "
                         "DO NOT enter an API key, token or password in this form."
                     ),
-                    "requestedSchema": SCHEMA,
+                    "requestedSchema": DEMO_SCHEMA if is_demo else SCHEMA,
                 },
             }]
         if msg_id is not None and self.pending is not None:
             if msg_id == self.pending["request_id"] and "method" not in msg:
                 call_id = self.pending["tool_call_id"]
+                mode = self.pending["mode"]
                 self.pending = None
-                return [jsonrpc_result(call_id, self._interpret_response(msg))]
+                return [jsonrpc_result(call_id, self._interpret_response(msg, mode))]
         return []
 
     @staticmethod
     def _status(text: str, *, error: bool = False) -> dict[str, Any]:
         return {"content": [{"type": "text", "text": "Form pilot: " + text}], "isError": error}
 
-    def _interpret_response(self, msg: dict[str, Any]) -> dict[str, Any]:
+    def _interpret_response(self, msg: dict[str, Any], mode: str) -> dict[str, Any]:
         if "error" in msg:
             return self._status("client rejected/does not support elicitation", error=True)
         result = msg.get("result")
@@ -150,6 +179,13 @@ class Probe:
         if result.get("action") != "accept":
             return self._status("unknown action refused", error=True)
         content = result.get("content")
+        if mode == "demo":
+            if not isinstance(content, dict) or content != {"demo_text": DEMO_MARKER}:
+                return self._status("unexpected public demo content refused", error=True)
+            return self._status(
+                "PUBLIC demo marker appears in tool result: " + DEMO_MARKER
+                + "; never use MCP Form for actual credentials"
+            )
         if (
             not isinstance(content, dict)
             or set(content) != {"destination", "confirm"}
